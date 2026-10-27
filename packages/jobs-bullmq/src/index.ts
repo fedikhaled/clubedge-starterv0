@@ -67,6 +67,7 @@ export function createBullMqJobs({
     return connection;
   };
   let shared: Redis | undefined;
+  let blocking: Redis | undefined;
   const queues = new Map<string, Queue>();
   const workers: Worker[] = [];
   let working: Promise<void> | undefined;
@@ -202,13 +203,18 @@ export function createBullMqJobs({
 
     async runDue({ limit = 25 } = {}) {
       await syncSchedules();
+      // BullMQ duplicates a caller-owned connection for each blocking worker and closes only that
+      // duplicate, so one connection serves every definition here. Creating one per definition
+      // would leave a connected client open for every call until stop().
+      blocking ??= connect(true);
+      const connection = blocking;
       let completed = 0;
       let failed = 0;
       for (const definition of definitions) {
         if (completed + failed >= limit) break;
         // A worker without a processor: this process fetches and finishes each job itself.
         const manual = new Worker(definition.name, null, {
-          connection: connect(true),
+          connection,
           prefix,
           autorun: false,
         });
@@ -273,6 +279,7 @@ export function createBullMqJobs({
           .map((connection) => connection.quit().catch(() => connection.disconnect())),
       );
       shared = undefined;
+      blocking = undefined;
       working = undefined;
     },
   };
