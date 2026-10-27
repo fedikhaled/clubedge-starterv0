@@ -81,6 +81,12 @@ jobs:
           fi
           after=$(starter_field starterRef .clubedge/incoming/package.json)
           repository=$(starter_field starterRepository .clubedge/incoming/package.json)
+          # Merging a pull request that dropped clubedge.starterRef would leave this project
+          # unable to tell what it is on, and the next run would read it as "not generated".
+          if [ -z "$after" ]; then
+            echo "The upgrade left no clubedge.starterRef in package.json, so nothing was pushed."
+            exit 1
+          fi
           if [ "$after" = "$before" ] && [ -z "$(git status --porcelain)" ]; then
             echo "Already on the newest Starter release, $before."
             exit 0

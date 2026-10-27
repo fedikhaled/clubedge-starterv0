@@ -48,6 +48,9 @@ const upgradedFiles = {
   ),
   "incoming.json": manifest("v0.25.0", "0.25.0"),
   "clean.json": manifest("v0.25.0"),
+  // Resolving a conflict by deleting the whole `clubedge` block parses fine and upgrades nothing
+  // else, so the next run would read the project as one create-clubedge-app never created.
+  "unversioned.json": manifest("v0.25.0").replace(', "starterRef": "v0.25.0"', ""),
 };
 
 const fakePnpm = `#!/usr/bin/env bash
@@ -71,6 +74,10 @@ case "$FAKE_UPGRADE" in
     exit 0 ;;
   current)
     echo "The project is already on Starter v0.24.2."
+    exit 0 ;;
+  unversioned)
+    cp "$FAKE_FILES/unversioned.json" package.json
+    echo "update   package.json"
     exit 0 ;;
   *)
     echo "Could not resolve the Starter."
@@ -274,6 +281,17 @@ describe.skipIf(process.platform === "win32")("the Starter upgrade workflow", ()
     expect(upgrade.status).toBe(1);
     expect(upgrade.output).toContain("The upgrade failed (exit code 1); nothing was pushed.");
     expect(upgrade.outputs).toEqual({});
+  });
+
+  it("stops without pushing when the upgrade leaves no Starter release recorded", () => {
+    const paths = project();
+    const upgrade = run(paths, upgradeStep, { FAKE_UPGRADE: "unversioned" });
+    expect(upgrade.status, upgrade.output).toBe(1);
+    expect(upgrade.output).toContain(
+      "The upgrade left no clubedge.starterRef in package.json, so nothing was pushed.",
+    );
+    expect(upgrade.outputs).toEqual({});
+    expect(remoteBranches(paths)).toEqual([expect.stringMatching(/\trefs\/heads\/main$/)]);
   });
 
   it("explains a package.json that does not parse before the upgrade", () => {
