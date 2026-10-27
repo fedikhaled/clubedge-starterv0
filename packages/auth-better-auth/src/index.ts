@@ -183,6 +183,23 @@ function apiErrorCode(error: unknown): string | undefined {
   return typeof body?.code === "string" ? body.code : undefined;
 }
 
+function apiErrorStatus(error: unknown): number | undefined {
+  const { status, statusCode } = error as { status?: unknown; statusCode?: unknown };
+  if (typeof status === "number") return status;
+  return typeof statusCode === "number" ? statusCode : undefined;
+}
+
+/**
+ * The codes Better Auth uses for a bad email/password pair. Reporting any other API error as
+ * invalid credentials would send users to fix a password that was never the problem.
+ */
+const credentialCodes = new Set([
+  "INVALID_EMAIL_OR_PASSWORD",
+  "INVALID_PASSWORD",
+  "USER_NOT_FOUND",
+  "CREDENTIAL_ACCOUNT_NOT_FOUND",
+]);
+
 /** The cookies a response set, as a request header, to read the session they created. */
 function responseCookieHeaders(headers: Headers): Headers {
   const cookies = splitSetCookieHeader(headers.get("set-cookie") ?? "").flatMap((cookie) =>
@@ -218,9 +235,13 @@ export function createBetterAuth({
         applyCookies(cookies, headers);
         return ok(toAuthUser(response.user));
       } catch (error) {
-        if (isApiError(error) && apiErrorCode(error) === "EMAIL_NOT_VERIFIED")
-          return err("email-not-verified");
-        if (isApiError(error)) return err("invalid-credentials");
+        if (!isApiError(error)) throw error;
+        const code = apiErrorCode(error);
+        if (code === "EMAIL_NOT_VERIFIED") return err("email-not-verified");
+        // Better Auth's own limiter answers 429, with a code only on some routes.
+        if (code === "RATE_LIMIT_EXCEEDED" || apiErrorStatus(error) === 429)
+          return err("rate-limited");
+        if (code && credentialCodes.has(code)) return err("invalid-credentials");
         throw error;
       }
     },
