@@ -31,10 +31,12 @@ let devices: ReturnType<typeof createPushDevices>;
 let ada: string;
 let grace: string;
 
+// One database for the file: starting PGlite and migrating takes more than the default hook
+// timeout on a busy CI runner.
 beforeAll(async () => {
   ({ client, db } = await database());
   devices = createPushDevices(db);
-});
+}, 60_000);
 
 afterAll(async () => {
   await client.close();
