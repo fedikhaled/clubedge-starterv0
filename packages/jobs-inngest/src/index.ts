@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import { Inngest, RetryAfterError } from "inngest";
 import { serve } from "inngest/edge";
 import {
+  assertEnqueueOptions,
   JOB_DEFAULTS,
   errorOutput,
   runAttempt,
@@ -207,11 +208,13 @@ export function createInngestJobs({
 
     async enqueue(definition, data, { delaySeconds, key, throttleSeconds } = {}) {
       definitionFor(definition.name);
+      assertEnqueueOptions({ key, throttleSeconds });
       let id: string = randomUUID();
-      if (key) {
-        // Inngest drops a second event with the same id within 24 hours. With throttleSeconds, the
-        // id names the window, and a recent event with the key means this one is throttled.
-        const window = throttleSeconds ? throttleSeconds * 1000 : DAY;
+      if (key && throttleSeconds) {
+        // Inngest drops a second event with the same id within 24 hours, so the id names the
+        // window, and a recent event with the key means this one is throttled. Inngest's event
+        // list says nothing about the run an event started, so a window is the only limit it has.
+        const window = throttleSeconds * 1000;
         const recent = await events(definition, Date.now() - window).catch(() => []);
         if (recent.some((event) => event.data?.[KEY] === key)) return null;
         id = `${definition.name}:${key}:${Math.floor(Date.now() / window)}`;

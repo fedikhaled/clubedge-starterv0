@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import { Queue, Worker, type Job, type JobsOptions } from "bullmq";
 import { Redis } from "ioredis";
 import {
+  assertEnqueueOptions,
   JOB_DEFAULTS,
   errorOutput,
   runAttempt,
@@ -156,19 +157,15 @@ export function createBullMqJobs({
 
     async enqueue(definition, data, { delaySeconds, key, throttleSeconds } = {}) {
       definitionFor(definition.name);
+      assertEnqueueOptions({ key, throttleSeconds });
       const jobId = randomUUID();
       const job = await queueFor(definition).add(definition.name, data, {
         ...jobOptions(definition),
         jobId,
         ...(delaySeconds ? { delay: delaySeconds * 1000 } : {}),
-        // A key alone allows one unfinished job per key; with throttleSeconds, one per window.
-        ...(key
-          ? {
-              deduplication: {
-                id: `${definition.name}:${key}`,
-                ...(throttleSeconds ? { ttl: throttleSeconds * 1000 } : {}),
-              },
-            }
+        // One job per key inside the window; BullMQ forgets the key when the job finishes earlier.
+        ...(key && throttleSeconds
+          ? { deduplication: { id: `${definition.name}:${key}`, ttl: throttleSeconds * 1000 } }
           : {}),
       });
       // A deduplicated add returns the job that is already there.

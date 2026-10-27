@@ -1,5 +1,6 @@
 import { PgBoss, type Db, type Job, type JobWithMetadata } from "pg-boss";
 import {
+  assertEnqueueOptions,
   JOB_DEFAULTS,
   errorOutput,
   runAttempt,
@@ -131,11 +132,12 @@ export function createPgBossJobs({
 
     async enqueue(definition, data, { delaySeconds, key, throttleSeconds } = {}) {
       definitionFor(definition.name);
+      assertEnqueueOptions({ key, throttleSeconds });
       await start();
       return boss.send(definition.name, data, {
         ...(delaySeconds ? { startAfter: delaySeconds } : {}),
-        ...(key ? { singletonKey: key } : {}),
-        ...(key && throttleSeconds ? { singletonSeconds: throttleSeconds } : {}),
+        // pg-boss only enforces a singleton key inside a window, which the contract requires.
+        ...(key && throttleSeconds ? { singletonKey: key, singletonSeconds: throttleSeconds } : {}),
       });
     },
 
