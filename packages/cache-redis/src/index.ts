@@ -1,5 +1,6 @@
 import { createClient } from "redis";
 import {
+  validateCacheEntry,
   validateRateLimitIdentifier,
   validateRateLimitOptions,
   type Cache,
@@ -55,13 +56,7 @@ export function createRedisCache(url: string, prefix = "clubedge:cache:"): Cache
       }
     },
     async set(key, value, ttlSeconds) {
-      if (!Number.isInteger(ttlSeconds) || ttlSeconds < 1) {
-        throw new Error("Cache TTL must be a positive integer number of seconds.");
-      }
-      const serialized = JSON.stringify(value);
-      if (serialized === undefined) {
-        throw new Error("Cache values must be JSON serializable.");
-      }
+      const serialized = validateCacheEntry(key, value, ttlSeconds);
       await (await connectRedis(url)).set(`${prefix}${key}`, serialized, { EX: ttlSeconds });
     },
   };

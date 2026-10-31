@@ -1,7 +1,18 @@
 /** A key-value cache with per-entry expiry. Adapters: in-memory here, Redis in @clubedge/cache-redis. */
 export interface Cache {
   get<T>(key: string): Promise<T | null>;
+  /** Stores JSON, for a whole number of seconds; both adapters read a value back the same way. */
   set(key: string, value: unknown, ttlSeconds: number): Promise<void>;
+}
+
+/** The TTL and value every adapter must accept, as the JSON text Redis stores. */
+export function validateCacheEntry(key: string, value: unknown, ttlSeconds: number): string {
+  if (!Number.isInteger(ttlSeconds) || ttlSeconds < 1) {
+    throw new Error("Cache TTL must be a positive whole number of seconds.");
+  }
+  const json = JSON.stringify(value);
+  if (json === undefined) throw new Error(`Cache values must be JSON serializable: "${key}".`);
+  return json;
 }
 
 /**
@@ -25,13 +36,11 @@ export function createMemoryCache({
       return entry.value as T;
     },
     async set(key, value, ttlSeconds) {
-      if (!Number.isFinite(ttlSeconds) || ttlSeconds <= 0) {
-        throw new Error("Cache TTL must be a positive number of seconds.");
-      }
+      const json = validateCacheEntry(key, value, ttlSeconds);
       entries.delete(key);
       if (entries.size >= maxKeys) entries.delete(entries.keys().next().value!);
-      // Store a structured copy so later mutations of `value` do not change the cache.
-      entries.set(key, { value: structuredClone(value), expiresAt: now() + ttlSeconds * 1000 });
+      // Through JSON, so a value cached here reads back exactly as it would from Redis.
+      entries.set(key, { value: JSON.parse(json), expiresAt: now() + ttlSeconds * 1000 });
     },
   };
 }

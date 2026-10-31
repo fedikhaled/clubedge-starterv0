@@ -1,0 +1,82 @@
+{
+  "id": "expo",
+  "name": "Expo",
+  "role": "mobile",
+  "envExample": ".env.example",
+  "conditional": [
+    ".env.example",
+    "app.config.ts",
+    "src/app/(app)/index.tsx",
+    "src/app/(app)/settings/index.tsx",
+    "src/app/forgot-password.tsx",
+    "src/app/sign-up.tsx",
+    "src/components/sign-out-sheet.tsx",
+    "src/components/update-gate.tsx",
+    "src/lib/api.ts",
+    "src/lib/auth-client.ts",
+    "src/lib/config.ts",
+    "src/variants/api.auth.ts",
+    "src/variants/app-layout.auth.tsx",
+    "src/variants/auth.better-auth.ts",
+    "src/variants/auth.supabase.ts"
+  ],
+  "auditIgnores": ["GHSA-86w9-cpqp-85rv", "GHSA-mrhx-c7xc-m3w5"],
+  "modules": {
+    "auth": {
+      "none": {},
+      "supabase|better-auth": {
+        "files": [
+          "src/app/welcome.tsx",
+          "src/app/sign-in.tsx",
+          "src/app/sign-up.tsx",
+          "src/app/forgot-password.tsx",
+          "src/app/reset-password.tsx",
+          "src/app/(app)/settings",
+          "src/components/sign-out-sheet.tsx",
+          "src/components/tab-bar.tsx",
+          "src/lib/account.ts",
+          "src/lib/auth.ts",
+          "src/lib/auth-client.ts",
+          "src/lib/session.tsx"
+        ],
+        "replace": {
+          "src/app/_layout.tsx": "src/variants/layout.auth.tsx",
+          "src/app/(app)/_layout.tsx": "src/variants/app-layout.auth.tsx",
+          "src/lib/api.ts": "src/variants/api.auth.ts",
+          "src/lib/auth-enabled.ts": "src/variants/auth-enabled.auth.ts"
+        }
+      },
+      "supabase": {
+        "replace": {
+          "src/lib/auth.ts": "src/variants/auth.supabase.ts"
+        }
+      },
+      "better-auth": {
+        "replace": {
+          "src/lib/auth.ts": "src/variants/auth.better-auth.ts"
+        }
+      }
+    },
+    "push": {
+      "none": {},
+      "expo|native": {
+        "files": ["src/components/push-settings.tsx", "src/lib/push.ts", "src/lib/push-token.ts"]
+      },
+      "native": {
+        "files": ["src/variants/push-token.native.ts"],
+        "replace": {
+          "src/lib/push-token.ts": "src/variants/push-token.native.ts"
+        }
+      }
+    },
+    "ota": {
+      "none": {},
+      "eas": {
+        "files": ["src/components/ota-banner.tsx", "src/lib/ota.ts", "variants/eas.updates.json"],
+        "replace": {
+          "eas.json": "variants/eas.updates.json"
+        }
+      }
+    }
+  }
+}

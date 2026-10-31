@@ -29,10 +29,28 @@ jobs:
           node-version: 22
           cache: pnpm
       # Python apps (the FastAPI API) run their checks with uv.
-      - uses: astral-sh/setup-uv@v10.3.0
+      - uses: astral-sh/setup-uv@v10.3.2
       - run: pnpm install --frozen-lockfile
       - run: pnpm typecheck
       - run: pnpm test
+
+  # The mobile apps' release workflows run only by hand, with signing secrets, so nothing else
+  # runs them. GitHub refuses a whole workflow file over one expression it can't evaluate, such as
+  # a context where it isn't available, and shows that only as a failed run on each push.
+  release-workflows:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - name: Lint the release workflows
+        run: |
+          set -euo pipefail
+          bash <(curl --fail --silent --show-error https://raw.githubusercontent.com/rhysd/actionlint/v1.7.7/scripts/download-actionlint.bash) 1.7.7 "$RUNNER_TEMP"
+          # The workflows themselves, without their scripts' shellcheck findings.
+          "$RUNNER_TEMP/actionlint" -shellcheck= -pyflakes= .github/workflows/shell-release.yml \
+            .github/workflows/expo-release.yml .github/workflows/expo-update.yml
 
   # The Appwrite provider against Appwrite Cloud: the auth conformance suite on the Starter's test
   # project, which removes the users it creates. Pull requests from forks get no secrets, so there
@@ -40,6 +58,11 @@ jobs:
   appwrite:
     runs-on: ubuntu-24.04
     timeout-minutes: 15
+    # Every run signs up users in the one Appwrite Cloud test project and deletes them at the end:
+    # one run at a time, across branches, so their users never mix. A newer run waits.
+    concurrency:
+      group: appwrite-cloud
+      cancel-in-progress: false
     env:
       APPWRITE_ENDPOINT: ${{ secrets.APPWRITE_ENDPOINT }}
       APPWRITE_PROJECT_ID: ${{ secrets.APPWRITE_PROJECT_ID }}
@@ -62,6 +85,40 @@ jobs:
       - name: Run the auth conformance suite against Appwrite Cloud
         if: env.APPWRITE_API_KEY != ''
         run: pnpm exec vitest run packages/auth-appwrite/src/conformance.live.test.ts
+      # The adapter reports every refused sign-up as signup-failed. On a failure, this asks
+      # Appwrite the same way (create the account, then a session, with the key) and prints its
+      # answers: an expired key, a limit reached, or an outage shows here. The account is deleted.
+      - name: Show why Appwrite refused
+        if: failure() && env.APPWRITE_API_KEY != ''
+        run: |
+          # Every answer is printed, whatever the requests before it returned.
+          set +e
+          api() {
+            local headers=(-H "X-Appwrite-Project: $APPWRITE_PROJECT_ID" -H "X-Appwrite-Key: $APPWRITE_API_KEY")
+            curl --silent --show-error --max-time 20 "${headers[@]}" -H "Content-Type: application/json" "$@"
+          }
+          answer() {
+            local response
+            response=$(cat)
+            jq -c '{code, type, message, total, "$id": .["$id"]}' <<<"$response" 2>/dev/null || echo "$response"
+          }
+          echo "::group::Users in the project"
+          api "$APPWRITE_ENDPOINT/users" | answer
+          echo "::endgroup::"
+          email="ci-diagnosis-$(date +%s)@example.com"
+          password="diagnosis-$RANDOM-$RANDOM-$RANDOM"
+          echo "::group::Create an account ($email)"
+          body="{\"userId\":\"unique()\",\"email\":\"$email\",\"password\":\"$password\"}"
+          created=$(api -X POST "$APPWRITE_ENDPOINT/account" -d "$body")
+          echo "$created" | answer
+          echo "::endgroup::"
+          id=$(echo "$created" | jq -r '.["$id"] // empty' 2>/dev/null || true)
+          if [ -n "$id" ]; then
+            echo "::group::Create a session for it"
+            api -X POST "$APPWRITE_ENDPOINT/account/sessions/email" -d "{\"email\":\"$email\",\"password\":\"$password\"}" | answer
+            echo "::endgroup::"
+            api -X DELETE "$APPWRITE_ENDPOINT/users/$id" >/dev/null || true
+          fi
 
   tanstack-start:
     runs-on: ubuntu-24.04
@@ -168,7 +225,13 @@ jobs:
           - { deploy: netlify, framework: next, auth: better-auth }
           - { deploy: netlify, framework: tanstack-start, auth: better-auth }
           - { deploy: docker, framework: vite, api: hono, auth: supabase }
-          - { deploy: railway, framework: vite, api: hono, auth: supabase }
+          - {
+              deploy: railway,
+              framework: vite,
+              api: hono,
+              auth: supabase,
+              modules: --payments stripe,
+            }
           - { deploy: docker, framework: vite, api: fastapi, auth: supabase }
           - { deploy: railway, framework: vite, api: fastapi, auth: supabase }
     env:
@@ -188,7 +251,7 @@ jobs:
           pnpm build
       - name: Generate the project
         run: |
-          node "$RUNNER_TEMP/cli/bin/create.mjs" "$RUNNER_TEMP/app" --template-dir "$GITHUB_WORKSPACE"             --framework ${{ matrix.framework }} --deploy ${{ matrix.deploy }} --auth ${{ matrix.auth }} ${{ matrix.api && format('--api {0}', matrix.api) || '' }}             --no-git --no-install --yes
+          node "$RUNNER_TEMP/cli/bin/create.mjs" "$RUNNER_TEMP/app" --template-dir "$GITHUB_WORKSPACE"             --framework ${{ matrix.framework }} --deploy ${{ matrix.deploy }} --auth ${{ matrix.auth }} ${{ matrix.api && format('--api {0}', matrix.api) || '' }} ${{ matrix.modules }}             --no-git --no-install --yes
       - name: Check the platform config
         working-directory: ${{ runner.temp }}/app
         run: |
@@ -276,10 +339,27 @@ jobs:
               ! grep -q 'BETTER_AUTH_SECRET' "$env_schema"
               ;;
           esac
+          # A frontend and its API: the API's module variables go to the API only.
+          if [ -n "${{ matrix.api }}" ] && [[ "${{ matrix.modules }}" == *"--payments stripe"* ]]; then
+            grep -q '^STRIPE_SECRET_KEY=' apps/api/.env.example
+            grep -q '^STRIPE_WEBHOOK_SECRET=' apps/api/.env.example
+            grep -q '^STRIPE_PRICE_PRO=' apps/api/.env.example
+            for frontend in apps/web/.env.example .env.example; do
+              if [ -e "$frontend" ] && grep -n 'STRIPE_' "$frontend"; then
+                echo "$frontend has the API's Stripe variables."
+                exit 1
+              fi
+            done
+          fi
       - name: Lint the deploy workflow
         working-directory: ${{ runner.temp }}/app
         run: |
           set -euo pipefail
+          # Docker projects deploy with the files `clubedge deploy` writes, so they have no deploy.yml.
+          if [ "${{ matrix.deploy }}" = docker ]; then
+            test ! -e .github/workflows/deploy.yml
+            exit 0
+          fi
           bash <(curl --fail --silent --show-error https://raw.githubusercontent.com/rhysd/actionlint/v1.7.7/scripts/download-actionlint.bash) 1.7.7 "$RUNNER_TEMP"
           "$RUNNER_TEMP/actionlint" .github/workflows/deploy.yml
           ! grep -n "clubedge:" .github/workflows/deploy.yml
@@ -304,7 +384,9 @@ jobs:
   # Generates projects from this checkout with create-clubedge-app and runs their full pipeline.
   generated-project:
     runs-on: ubuntu-24.04
-    timeout-minutes: 30
+    # The native app's release build takes up to 20 minutes on its own, and the rest of the
+    # project about 10: projects with it get more time.
+    timeout-minutes: ${{ contains(matrix.modules, '--mobile') && 45 || 30 }}
     strategy:
       fail-fast: false
       matrix:
@@ -343,19 +425,120 @@ jobs:
             }
           # A frontend and a separate API, joined by packages/contract.
           - { name: vite-hono, framework: vite, modules: --auth none --api hono }
+          - {
+              name: vite-hono-minimal,
+              framework: vite,
+              modules: --auth none --api hono --storage none --cache memory --email none,
+            }
+          # Every module the API implements, on its providers' code paths.
+          - {
+              name: vite-hono-modules-a,
+              framework: vite,
+              modules: --api hono --auth better-auth --storage s3 --cache redis --observability otel --payments stripe --jobs pg-boss,
+            }
+          - {
+              name: vite-hono-modules-b,
+              framework: vite,
+              modules: --api hono --auth supabase --storage supabase --observability sentry --jobs inngest,
+            }
+          - {
+              name: vite-hono-bullmq,
+              framework: vite,
+              modules: --api hono --auth firebase --cache redis --jobs bullmq --payments stripe,
+            }
+          - {
+              name: vite-fastapi-modules-a,
+              framework: vite,
+              modules: --api fastapi --auth better-auth --storage s3 --email smtp --cache redis --observability otel,
+            }
+          - {
+              name: vite-fastapi-modules-b,
+              framework: vite,
+              modules: --api fastapi --auth supabase --storage supabase --observability sentry,
+            }
           - { name: vite-fastapi, framework: vite, modules: --auth none --api fastapi }
           - { name: vite-hono-supabase, framework: vite, modules: --auth supabase --api hono }
           - { name: vite-fastapi-supabase, framework: vite, modules: --auth supabase --api fastapi }
           - { name: vite-hono-better-auth, framework: vite, modules: --auth better-auth --api hono }
+          # The mobile app: the same web app built for Android, with bearer sessions.
+          - {
+              name: vite-hono-capacitor,
+              framework: vite,
+              modules: --auth better-auth --api hono --shell capacitor,
+            }
+          # The native app: its own screens, signing in with Better Auth through the website, and
+          # with Supabase next to the FastAPI API.
+          - {
+              name: vite-hono-expo,
+              framework: vite,
+              modules: --auth better-auth --api hono --mobile expo,
+            }
+          - {
+              name: vite-fastapi-expo,
+              framework: vite,
+              modules: --auth supabase --api fastapi --mobile expo,
+            }
+          # Push notifications through Expo's push service, with over-the-air updates; and straight
+          # through FCM and APNs to both mobile apps.
+          - {
+              name: vite-hono-expo-push,
+              framework: vite,
+              modules: --auth better-auth --api hono --mobile expo --push expo --ota eas,
+            }
+          - {
+              name: vite-fastapi-mobile-push,
+              framework: vite,
+              modules: --auth supabase --api fastapi --mobile expo --shell capacitor --push native,
+            }
+          # Without a website: the API and the native app, which calls it directly, with Better Auth
+          # running in the Hono API, and with Supabase next to the FastAPI API; and an API alone.
+          - {
+              name: api-hono-expo,
+              framework: none,
+              modules: --auth better-auth --api hono --mobile expo,
+            }
+          - {
+              name: api-fastapi-expo,
+              framework: none,
+              modules: --auth supabase --api fastapi --mobile expo,
+            }
+          - { name: api-hono, framework: none, modules: --auth none --api hono }
+          - {
+              name: vite-hono-resend,
+              framework: vite,
+              modules: --auth better-auth --api hono --email resend,
+            }
+          - {
+              name: vite-fastapi-resend,
+              framework: vite,
+              modules: --auth better-auth --api fastapi --email resend,
+            }
           - {
               name: vite-fastapi-better-auth,
               framework: vite,
               modules: --auth better-auth --api fastapi,
             }
+          # Payments on the FastAPI API: Stripe, in the same tables as the Hono API's.
+          - {
+              name: vite-fastapi-payments,
+              framework: vite,
+              modules: --api fastapi --auth better-auth --payments stripe,
+            }
           - { name: vite-hono-firebase, framework: vite, modules: --auth firebase --api hono }
           - { name: vite-fastapi-firebase, framework: vite, modules: --auth firebase --api fastapi }
           - { name: vite-hono-appwrite, framework: vite, modules: --auth appwrite --api hono }
           - { name: vite-fastapi-appwrite, framework: vite, modules: --auth appwrite --api fastapi }
+          # FastAPI with each jobs provider it offers.
+          - {
+              name: vite-fastapi-bullmq,
+              framework: vite,
+              modules: --api fastapi --auth firebase --cache redis --jobs bullmq,
+            }
+          - {
+              name: vite-fastapi-inngest,
+              framework: vite,
+              modules: --api fastapi --auth better-auth --jobs inngest,
+            }
     name: generated-project (${{ matrix.name }})
     env:
       CLI_REF: ${{ inputs.cli-ref || 'main' }}
@@ -367,7 +550,7 @@ jobs:
           node-version: 22
           cache: pnpm
       # Python apps (the FastAPI API) run their checks with uv.
-      - uses: astral-sh/setup-uv@v10.3.0
+      - uses: astral-sh/setup-uv@v10.3.2
       - name: Build create-clubedge-app
         run: |
           set -euo pipefail
@@ -379,6 +562,23 @@ jobs:
         run: |
           node "$RUNNER_TEMP/cli/bin/create.mjs" "$RUNNER_TEMP/generated-app" --template-dir "$GITHUB_WORKSPACE" \
             --framework ${{ matrix.framework }} ${{ matrix.modules }} --no-git --no-install --yes
+      # FastAPI offers every module option but pg-boss, whose queue is a TypeScript library, so
+      # the CLI must refuse it rather than generate a frontend whose jobs its API cannot run.
+      - name: Refuse modules FastAPI does not implement
+        if: matrix.name == 'vite-fastapi'
+        run: |
+          set -euo pipefail
+          for option in "--jobs pg-boss"; do
+            if node "$RUNNER_TEMP/cli/bin/create.mjs" "$RUNNER_TEMP/refused" \
+              --template-dir "$GITHUB_WORKSPACE" --framework vite --api fastapi $option \
+              --no-git --no-install --yes > "$RUNNER_TEMP/refused.log" 2>&1; then
+              echo "The CLI generated a FastAPI project with $option."
+              exit 1
+            fi
+            grep -q "FastAPI (Python) does not implement" "$RUNNER_TEMP/refused.log" \
+              || { cat "$RUNNER_TEMP/refused.log"; exit 1; }
+            test ! -e "$RUNNER_TEMP/refused"
+          done
       - name: Install
         working-directory: ${{ runner.temp }}/generated-app
         run: pnpm install --frozen-lockfile
@@ -402,6 +602,7 @@ jobs:
           cat "$RUNNER_TEMP/firebase.log"
           exit 1
       - name: Browser checks
+        if: matrix.framework != 'none'
         working-directory: ${{ runner.temp }}/generated-app
         env:
           E2E_AUTH_ENABLED: ${{ contains(matrix.modules, '--auth firebase') || (matrix.framework == 'vite' && contains(matrix.modules, '--auth better-auth')) }}
@@ -419,6 +620,7 @@ jobs:
         if: failure() && contains(matrix.modules, '--auth firebase')
         run: tail -n 100 "$RUNNER_TEMP/firebase.log" || true
       - name: Build, start, and smoke-test
+        if: matrix.framework != 'none'
         working-directory: ${{ runner.temp }}/generated-app
         run: |
           set -euo pipefail
@@ -426,6 +628,104 @@ jobs:
           pnpm start > "$RUNNER_TEMP/app.log" 2>&1 &
           trap 'tail -n 50 "$RUNNER_TEMP/app.log"' EXIT
           node "$GITHUB_WORKSPACE/scripts/smoke-generated-app.mjs"
+      # Without a website, pnpm start serves the API on port 3001, and, with Better Auth, the API
+      # answers sign-in at /api/auth itself.
+      - name: Build, start, and check the API
+        if: matrix.framework == 'none'
+        working-directory: ${{ runner.temp }}/generated-app
+        env:
+          BETTER_AUTH_SECRET: ${{ contains(matrix.modules, '--auth better-auth') && 'starter-ci-secret-for-better-auth-0123456789' || '' }}
+        run: |
+          set -euo pipefail
+          pnpm build
+          pnpm start > "$RUNNER_TEMP/api.log" 2>&1 &
+          trap 'tail -n 50 "$RUNNER_TEMP/api.log"' EXIT
+          for attempt in $(seq 1 30); do
+            curl --fail --silent --output /dev/null http://127.0.0.1:3001/api/health && break
+            sleep 1
+          done
+          curl --fail --silent --show-error --output /dev/null http://127.0.0.1:3001/api/health
+          if [ -n "$BETTER_AUTH_SECRET" ]; then
+            curl --fail --silent --show-error http://127.0.0.1:3001/api/auth/ok
+          fi
+      # The mobile app: the web app's build for it, copied into the Android project Capacitor
+      # creates, and a debug APK. Capacitor 8 builds with Java 21; the runner has the Android SDK.
+      - uses: actions/setup-java@v6
+        if: contains(matrix.modules, '--shell')
+        with:
+          distribution: temurin
+          java-version: 21
+      - name: Build the mobile app for Android
+        if: contains(matrix.modules, '--shell')
+        working-directory: ${{ runner.temp }}/generated-app
+        env:
+          WEB_URL: https://example.com
+        run: |
+          set -euo pipefail
+          pnpm --filter @clubedge/shell run sync android
+          # The app's icons come from the logo, not Capacitor's own: the script fails if they can't.
+          pnpm --filter @clubedge/shell run icons android
+          # Capacitor is in the app's build, and never in the website's; the demo is in neither.
+          grep -rqF "plugin is not implemented on" apps/web/dist-app/assets
+          if grep -rqF "plugin is not implemented on" apps/web/dist/assets; then
+            echo "The website's build includes Capacitor."
+            exit 1
+          fi
+          if grep -rqF "demo.invalid" apps/web/dist/assets apps/web/dist-app/assets; then
+            echo "A build without --demo includes the demo."
+            exit 1
+          fi
+          (cd apps/shell/android && ./gradlew assembleDebug)
+          # A store release: the version, and the build number from it, in the Android project, and
+          # an App Bundle signed with a key made for this run.
+          pnpm --filter @clubedge/shell run set-version 1.2.3
+          grep -q "versionCode 1002003" apps/shell/android/app/build.gradle
+          grep -q 'versionName "1.2.3"' apps/shell/android/app/build.gradle
+          keytool -genkeypair -keystore "$RUNNER_TEMP/upload.keystore" -alias upload -keyalg RSA             -keysize 2048 -validity 1 -storepass starter-ci -keypass starter-ci -dname "CN=Starter CI"
+          ANDROID_KEYSTORE_PATH="$RUNNER_TEMP/upload.keystore" ANDROID_KEYSTORE_PASSWORD=starter-ci             ANDROID_KEY_ALIAS=upload ANDROID_KEY_PASSWORD=starter-ci             pnpm --filter @clubedge/shell run release android
+          # The output first: grep -q would close the pipe early, which pipefail counts as a failure.
+          # A bundle signed with SHA-1, as Capacitor's cap build does, counts as unsigned.
+          jarsigner -verify apps/shell/release/app-1.2.3.aab > "$RUNNER_TEMP/verify.txt"
+          grep -q "jar verified" "$RUNNER_TEMP/verify.txt" || { cat "$RUNNER_TEMP/verify.txt"; exit 1; }
+          # The demo's build: its own data, and no server.
+          pnpm --filter @clubedge/shell run sync android --demo
+          grep -rqF "demo.invalid" apps/web/dist-app/assets
+      - name: Upload the debug APK
+        if: contains(matrix.modules, '--shell')
+        uses: actions/upload-artifact@v7
+        with:
+          name: android-debug-${{ matrix.name }}
+          path: ${{ runner.temp }}/generated-app/apps/shell/android/app/build/outputs/apk/debug/app-debug.apk
+          retention-days: 3
+      # The native app: its packages against its Expo SDK, its JavaScript bundle for Android and
+      # iOS, and a release APK from the Android project Expo generates. React Native builds with
+      # Java 17; the runner has the Android SDK.
+      - uses: actions/setup-java@v6
+        if: contains(matrix.modules, '--mobile')
+        with:
+          distribution: temurin
+          java-version: 17
+      - name: Build the native app for Android
+        if: contains(matrix.modules, '--mobile')
+        working-directory: ${{ runner.temp }}/generated-app/apps/mobile
+        env:
+          EXPO_PUBLIC_API_URL: https://example.com
+        run: |
+          set -euo pipefail
+          pnpm exec expo install --check
+          pnpm exec expo export --platform android --platform ios
+          # The version a release sets, and the build number both stores get from it.
+          pnpm run set-version 1.2.3
+          pnpm exec expo prebuild --platform android
+          grep -q "versionCode 1002003" android/app/build.gradle
+          (cd android && ./gradlew assembleRelease)
+      - name: Upload the native app's APK
+        if: contains(matrix.modules, '--mobile')
+        uses: actions/upload-artifact@v7
+        with:
+          name: android-release-${{ matrix.name }}
+          path: ${{ runner.temp }}/generated-app/apps/mobile/android/app/build/outputs/apk/release/app-release.apk
+          retention-days: 3
       # Pages that need no database must keep working when it is not configured, so a mistake
       # in the environment never takes the whole app down at startup.
       - name: Serve pages without a database configured
@@ -493,7 +793,7 @@ jobs:
         with:
           node-version: 22
           cache: pnpm
-      - uses: astral-sh/setup-uv@v10.3.0
+      - uses: astral-sh/setup-uv@v10.3.2
       - name: Build create-clubedge-app
         run: |
           set -euo pipefail
@@ -563,7 +863,7 @@ jobs:
         with:
           node-version: 22
           cache: pnpm
-      - uses: astral-sh/setup-uv@v10.3.0
+      - uses: astral-sh/setup-uv@v10.3.2
       - name: Build create-clubedge-app
         run: |
           set -euo pipefail
@@ -607,7 +907,7 @@ jobs:
   # Generates projects with local infrastructure, starts it, and proves the app uses it: service
   # round trips through `pnpm check:services` and a real sign-up, sign-out, and sign-in.
   local-infra:
-    name: local-infra (${{ matrix.infra }}, ${{ matrix.framework }})
+    name: local-infra (${{ matrix.infra }}, ${{ matrix.framework }}, ${{ matrix.api || 'none' }}, ${{ matrix.modules }})
     runs-on: ubuntu-24.04
     timeout-minutes: 40
     strategy:
@@ -687,6 +987,94 @@ jobs:
               modules: --auth supabase --storage supabase --jobs pg-boss,
               mail-api: "http://127.0.0.1:55424",
             }
+          # A frontend and its API: Better Auth in the frontend's server, the rest in the API.
+          # Better Auth's emails go through the email module to Mailpit.
+          - {
+              infra: docker,
+              framework: vite,
+              api: hono,
+              modules: --auth better-auth --email smtp --observability otel --payments stripe,
+              mail-api: "http://127.0.0.1:8025",
+            }
+          - {
+              infra: docker,
+              framework: vite,
+              api: hono,
+              modules: --auth better-auth --observability sentry,
+              mail-api: "",
+            }
+          # Each jobs provider, run by the API: a worker for pg-boss and BullMQ, and Inngest's Dev
+          # Server calling the API through the frontend.
+          - {
+              infra: docker,
+              framework: vite,
+              api: hono,
+              modules: --auth better-auth --jobs pg-boss,
+              mail-api: "",
+            }
+          - {
+              infra: docker,
+              framework: vite,
+              api: hono,
+              modules: --auth better-auth --jobs bullmq,
+              mail-api: "",
+            }
+          - {
+              infra: docker,
+              framework: vite,
+              api: hono,
+              modules: --auth better-auth --jobs inngest,
+              mail-api: "",
+            }
+          # The same with the FastAPI API: BullMQ's worker inside it, and Inngest's Dev Server
+          # calling it through the frontend, at the FRONTEND_URL Playwright gives the API.
+          - {
+              infra: docker,
+              framework: vite,
+              api: fastapi,
+              modules: --auth better-auth --jobs bullmq,
+              mail-api: "",
+            }
+          - {
+              infra: docker,
+              framework: vite,
+              api: fastapi,
+              modules: --auth better-auth --jobs inngest,
+              mail-api: "",
+            }
+          # The API's files in a local folder (STORAGE_DIRECTORY) instead of S3.
+          - {
+              infra: local,
+              framework: vite,
+              api: hono,
+              modules: --auth better-auth --jobs pg-boss,
+              mail-api: "",
+            }
+          # The FastAPI API: its files in the Docker S3 service, then in a local folder; its email
+          # goes to Mailpit, or to the log in local mode; checkout, the webhook, and the portal against
+          # the Stripe fake; its rate limits in the Docker Redis, and its traces and errors through
+          # each observability provider.
+          - {
+              infra: docker,
+              framework: vite,
+              api: fastapi,
+              modules: --auth better-auth --storage s3 --email smtp --payments stripe --cache redis --observability otel,
+              mail-api: "http://127.0.0.1:8025",
+            }
+          - {
+              infra: docker,
+              framework: vite,
+              api: fastapi,
+              modules: --auth better-auth --observability sentry,
+              mail-api: "",
+            }
+          - {
+              infra: local,
+              framework: vite,
+              api: fastapi,
+              modules: --auth better-auth --storage s3 --email smtp,
+              mail-api: "",
+            }
     env:
       CLI_REF: ${{ inputs.cli-ref || 'main' }}
       BETTER_AUTH_SECRET: ci-only-better-auth-secret-0123456789abcdef
@@ -698,6 +1086,9 @@ jobs:
         with:
           node-version: 22
           cache: pnpm
+      # The FastAPI API runs with uv.
+      - uses: astral-sh/setup-uv@v10.3.2
+        if: matrix.api == 'fastapi'
       - name: Build create-clubedge-app
         run: |
           set -euo pipefail
@@ -708,10 +1099,18 @@ jobs:
       - name: Generate the project
         run: |
           node "$RUNNER_TEMP/cli/bin/create.mjs" "$RUNNER_TEMP/generated-app" --template-dir "$GITHUB_WORKSPACE" \
-            --framework ${{ matrix.framework }} --infra ${{ matrix.infra }} ${{ matrix.modules }} --no-git --no-install --yes
+            --framework ${{ matrix.framework }} --api ${{ matrix.api || 'none' }} --infra ${{ matrix.infra }} ${{ matrix.modules }} --no-git --no-install --yes
       - name: Install
         working-directory: ${{ runner.temp }}/generated-app
-        run: pnpm install --frozen-lockfile
+        run: |
+          pnpm install --frozen-lockfile
+          # The FastAPI API's environment, ready before the browser tests start the API.
+          if [ "${{ matrix.api }}" = fastapi ]; then (cd apps/api && uv sync --locked); fi
+      # Better Auth checks that requests come from its own origin, which the browser tests reach
+      # as 127.0.0.1; the frontend's server hosts it, and the API asks it for sessions there.
+      - name: Serve Better Auth at the browser tests' origin
+        if: matrix.framework == 'vite'
+        run: echo "BETTER_AUTH_URL=http://127.0.0.1:3000" >> "$GITHUB_ENV"
       - name: Move Supabase services to unused CI ports
         if: matrix.infra == 'supabase'
         working-directory: ${{ runner.temp }}/generated-app
@@ -833,8 +1232,10 @@ jobs:
           E2E_DATABASE: "1"
         run: |
           pnpm exec playwright install --with-deps chromium
-          pnpm test:e2e e2e/auth-flow.spec.ts e2e/password-reset.spec.ts e2e/ready.spec.ts e2e/settings.spec.ts
+          pnpm test:e2e e2e/auth-flow.spec.ts e2e/password-reset.spec.ts e2e/ready.spec.ts \
+            e2e/settings.spec.ts
       - name: Run a background job (the dev server's worker, or Inngest)
+        if: contains(matrix.modules, '--jobs')
         working-directory: ${{ runner.temp }}/generated-app
         env:
           E2E_DATABASE: "1"
@@ -850,6 +1251,7 @@ jobs:
         env:
           APP_URL: http://127.0.0.1:3000
           NEXT_PUBLIC_APP_URL: http://127.0.0.1:3000
+          FRONTEND_URL: http://127.0.0.1:3000
         run: |
           nohup pnpm dev > "$RUNNER_TEMP/app.log" 2>&1 &
           for _ in $(seq 90); do curl --silent --fail --output /dev/null http://127.0.0.1:3000/api/health && break; sleep 2; done
@@ -871,7 +1273,7 @@ jobs:
           SENTRY_TRACES_SAMPLE_RATE: "1"
         run: pnpm test:e2e e2e/observability.spec.ts
       - name: Sign in only after confirming the email address
-        if: matrix.infra == 'docker' && contains(matrix.modules, '--auth better-auth')
+        if: matrix.infra == 'docker' && matrix.mail-api != '' && contains(matrix.modules, '--auth better-auth')
         working-directory: ${{ runner.temp }}/generated-app
         env:
           E2E_MAIL_API: ${{ matrix.mail-api }}
@@ -921,6 +1323,6 @@ jobs:
         if: failure()
         uses: actions/upload-artifact@v7
         with:
-          name: playwright-local-infra-${{ matrix.infra }}-${{ matrix.framework }}
+          name: playwright-local-infra-${{ matrix.infra }}-${{ matrix.framework }}-${{ matrix.api || 'none' }}-${{ strategy.job-index }}
           path: ${{ runner.temp }}/generated-app/test-results
           if-no-files-found: ignore

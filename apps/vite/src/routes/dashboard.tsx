@@ -9,9 +9,13 @@ import {
   LayoutDashboard,
   Settings2,
   ShieldCheck,
+  // clubedge:if storage!=none
+  Workflow,
+  // clubedge:end
 } from "lucide-react";
 import { getRouteApi, redirect } from "@tanstack/react-router";
 import { type Ready, type User } from "@clubedge/contract";
+import type { JobsStatus } from "@clubedge/contract"; // clubedge:only jobs!=none
 
 import { Badge } from "@clubedge/ui/components/badge";
 import { buttonVariants } from "@clubedge/ui/components/button";
@@ -32,10 +36,15 @@ import {
   TableRow,
 } from "@clubedge/ui/components/table";
 import { siteConfig } from "@/config/site";
+// clubedge:if payments!=none
+import { BillingCard } from "@/components/billing/billing-card";
+// clubedge:end
 import { AccountButton } from "@/components/dashboard/account-button";
 import { DashboardShell, type DashboardArea } from "@/components/dashboard/dashboard-shell";
+import { JobsCard } from "@/components/jobs/jobs-card"; // clubedge:only jobs!=none
 import { api } from "@/lib/api";
 import { authEnabled } from "@/lib/auth-enabled";
+import { publicOrigin } from "@/lib/public-origin";
 
 const modules = [
   {
@@ -45,6 +54,15 @@ const modules = [
     status: "Configure",
     variant: "secondary" as const,
   },
+  // clubedge:if storage!=none
+  {
+    name: "File storage",
+    description: "One storage interface for uploads, downloads, and signed URLs.",
+    icon: Workflow,
+    status: "Ready to configure",
+    variant: "secondary" as const,
+  },
+  // clubedge:end
   {
     name: "Cache and rate limits",
     description: "A key-value cache and fixed-window rate limiting.",
@@ -71,6 +89,10 @@ type DashboardData = {
   user: User | null;
   /** The API's readiness, or "unavailable" when it could not be reached. */
   api: Ready["status"];
+  // clubedge:if jobs!=none
+  /** How background jobs run and the user's recent ones, or null when the API was unreachable. */
+  jobs: JobsStatus | null;
+  // clubedge:end
 };
 
 /**
@@ -85,11 +107,23 @@ export async function loadDashboard(): Promise<DashboardData> {
   if (authEnabled && session?.response.ok && !session.data?.user) {
     throw redirect({ href: "/login?next=%2Fdashboard" });
   }
+  const jobs = await loadJobs(); // clubedge:only jobs!=none
   return {
     user: session?.data?.user ?? null,
     api: ready?.data?.status === "ok" ? "ok" : "unavailable",
+    jobs, // clubedge:only jobs!=none
   };
 }
+// clubedge:if jobs!=none
+
+/** A queue that does not answer, such as Redis while it is down, must not hold up the page. */
+async function loadJobs(): Promise<JobsStatus | null> {
+  const response = await api
+    .GET("/api/jobs", { signal: AbortSignal.timeout(5_000) })
+    .catch(() => null);
+  return response?.data ?? null;
+}
+// clubedge:end
 
 const route = getRouteApi("/dashboard");
 
@@ -190,7 +224,7 @@ export function DashboardPage() {
               <p className="mt-1 text-xs text-muted-foreground">
                 <a
                   className="inline-flex items-center gap-1 text-primary hover:underline"
-                  href="/api/health"
+                  href={`${publicOrigin}/api/health`}
                 >
                   Check liveness <ArrowUpRight aria-hidden="true" className="size-3" />
                 </a>
@@ -198,6 +232,10 @@ export function DashboardPage() {
             </CardContent>
           </Card>
         </section>
+
+        {/* clubedge:if payments!=none */}
+        <BillingCard />
+        {/* clubedge:end */}
 
         <section className="grid gap-6 xl:grid-cols-[1.1fr_0.9fr]" id="modules">
           <Card className="gap-0 py-0">
@@ -278,6 +316,10 @@ export function DashboardPage() {
             </CardContent>
           </Card>
         </section>
+
+        {/* clubedge:if jobs!=none */}
+        <JobsCard status={data.jobs} />
+        {/* clubedge:end */}
 
         <Card className="gap-4 border-dashed bg-muted/30 py-5 shadow-none">
           <CardContent className="flex flex-col gap-4 px-5 sm:flex-row sm:items-center sm:justify-between sm:px-6">

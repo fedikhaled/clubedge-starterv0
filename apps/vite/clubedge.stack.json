@@ -4,6 +4,24 @@
   "role": "frontend",
   "envExample": ".env.example",
   "dockerfile": "Dockerfile",
+  "conditional": [
+    "auth.server.mjs",
+    "server.mjs",
+    "src/components/billing/billing-card.tsx",
+    "src/components/dashboard/variants/account-button.supabase.tsx",
+    "src/components/route-error.tsx",
+    "src/lib/api.ts",
+    "src/main.tsx",
+    "src/routes/dashboard.tsx",
+    "src/routes/settings.tsx",
+    "src/styles.css",
+    "src/variants/api.better-auth.ts",
+    "src/variants/api.supabase.ts",
+    "src/variants/auth.better-auth.ts",
+    "src/variants/auth.firebase.ts",
+    "src/variants/auth.supabase.ts",
+    "vite.config.ts"
+  ],
   "deployment": {
     "id": "web",
     "port": 3000,
@@ -21,6 +39,7 @@
           "src/routes/login.tsx",
           "src/routes/forgot-password.tsx",
           "src/routes/reset-password.tsx",
+          "src/routes/settings.tsx",
           "src/variants/router.supabase.tsx",
           "src/components/dashboard/variants/account-button.supabase.tsx",
           "src/variants/auth-enabled.supabase.ts"
@@ -39,6 +58,7 @@
           "src/routes/login.tsx",
           "src/routes/forgot-password.tsx",
           "src/routes/reset-password.tsx",
+          "src/routes/settings.tsx",
           "src/variants/auth.firebase.ts",
           "src/variants/router.supabase.tsx",
           "src/variants/api.supabase.ts",
@@ -59,6 +79,7 @@
           "src/routes/login.tsx",
           "src/routes/forgot-password.tsx",
           "src/routes/reset-password.tsx",
+          "src/routes/settings.tsx",
           "src/variants/auth.appwrite.ts",
           "src/variants/router.supabase.tsx",
           "src/variants/api.supabase.ts",
@@ -81,6 +102,7 @@
           "src/routes/login.tsx",
           "src/routes/forgot-password.tsx",
           "src/routes/reset-password.tsx",
+          "src/routes/settings.tsx",
           "src/variants/auth.better-auth.ts",
           "src/variants/router.supabase.tsx",
           "src/variants/api.supabase.ts",
@@ -96,9 +118,40 @@
         }
       }
     },
+    "email": {
+      "smtp": {},
+      "resend": {},
+      "none": {}
+    },
+    "jobs": {
+      "pg-boss|bullmq|inngest": {
+        "files": ["src/components/jobs"]
+      },
+      "none": {}
+    },
+    "payments": {
+      "stripe": {
+        "files": ["src/components/billing"]
+      },
+      "none": {}
+    },
+    "observability": {
+      "otel|sentry": {
+        "files": ["src/components/error-reporting.tsx"]
+      },
+      "sentry": {
+        "replace": {
+          "src/components/error-reporting.tsx": "src/components/variants/error-reporting.sentry.tsx"
+        }
+      },
+      "none": {}
+    },
     "deploy": {
       "docker": {},
       "railway": {}
+    },
+    "push": {
+      "none|expo|native": {}
     }
   }
 }

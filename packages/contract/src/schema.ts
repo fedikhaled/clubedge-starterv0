@@ -55,6 +55,281 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  "/api/app-version": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** The app versions the API serves, for apps installed on phones, which keep calling it long after a release. Never cached. */
+    get: operations["getAppVersion"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/account": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** The signed-in user's account settings, for the settings page. Never cached. */
+    get: operations["getAccount"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/account/profile": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** Sets the display name the app shows, or clears it with an empty one. */
+    post: operations["updateProfile"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/account/delete": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** Deletes the signed-in user, after checking the password, with the data the app keeps for it; the user's sessions end with it. Password checks are limited to 10 a minute per user, and refused while the limit cannot be checked. */
+    post: operations["deleteAccount"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/client-errors": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** How the browser reports its errors, read at runtime so builds never bake it in. */
+    get: operations["getBrowserErrorReporting"];
+    put?: never;
+    /** Reports an error from the browser like a server error. 30 a minute per address. */
+    post: operations["reportBrowserError"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/jobs": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** How jobs run, and the current user's recent sample jobs. Never cached. */
+    get: operations["getJobsStatus"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/jobs/sample": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** Queues the sample job for the current user; repeats within seconds are ignored. */
+    post: operations["runSampleJob"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/jobs/run": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** Runs the jobs that are due, for a scheduler where no worker runs. Only providers that run jobs in the API (pg-boss, BullMQ) have it. */
+    get: operations["runDueJobs"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/inngest": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** Inngest's protocol (opaque here); only the Inngest provider has it. */
+    get: operations["inspectInngest"];
+    /** Inngest's protocol (opaque here); only the Inngest provider has it. */
+    put: operations["syncInngest"];
+    /** Inngest's protocol (opaque here): Inngest calls it to run a job, signed with the signing key. Only the Inngest provider has it. */
+    post: operations["runInngestJob"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/billing": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** The plans, and the signed-in user's subscription. Never cached. */
+    get: operations["getBilling"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/billing/checkout": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** Starts checkout for a plan, on the payment provider's hosted page. */
+    post: operations["startCheckout"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/billing/portal": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** Opens the payment provider's billing portal, where the user manages billing. */
+    post: operations["openBillingPortal"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/webhooks/payments": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** The payment provider's webhook, up to 1 MiB. The body is read raw, because the signature (Stripe-Signature) covers its exact bytes. Each event is applied once. */
+    post: operations["receivePaymentWebhook"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/push/devices": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** Saves this device's push token for the signed-in user, who then gets notifications on it. A token saved for another user moves to this one, as when someone else signs in on the device. The app sends it again at each start, since a push service can change a token. */
+    post: operations["registerPushDevice"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/push/devices/remove": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** Forgets a push token, when the app turns notifications off or signs out. The token is the device's own secret, so it needs no session: a device whose session has ended can still stop its notifications. */
+    post: operations["removePushDevice"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/push/test": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** Sends a notification to each of the signed-in user's devices, to check that they get them. Limited to 5 a minute per user, and refused while the limit cannot be checked. */
+    post: operations["sendTestPush"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -79,6 +354,39 @@ export interface components {
       email: string;
       displayName: string | null;
     };
+    /** @description Versions are MAJOR.MINOR.PATCH, such as 1.4.0. Each is the one for the platform the request names in X-App-Platform, where the API sets that platform its own. */
+    AppVersion: {
+      /** @description The oldest app version the API still serves: apps below it must update before continuing. Once nextMinimumFrom passes, it is nextMinimumVersion. */
+      minimumVersion: string | null;
+      /** @description The newest released version: apps below it may show an optional update notice. */
+      latestVersion: string | null;
+      /**
+       * Format: uri
+       * @description Where to get the update, such as a store listing or a download page.
+       */
+      updateUrl: string | null;
+      /** @description A minimum the API has announced but does not require yet: apps below it keep working until nextMinimumFrom, and can tell their users to update before then. Null when none is announced, and once its date passes, when it becomes minimumVersion. */
+      nextMinimumVersion: string | null;
+      /**
+       * Format: date-time
+       * @description When nextMinimumVersion becomes the minimum; null with it.
+       */
+      nextMinimumFrom: string | null;
+    };
+    Account: {
+      email: string;
+      /** @description The name the user chose in the app's settings, kept in the app's database. */
+      displayName: string | null;
+      /** @description Whether this server can delete accounts; some providers need a secret key for it. */
+      canDeleteAccount: boolean;
+    };
+    ProfileUpdate: {
+      /** @description Trimmed; an empty name clears it. */
+      displayName: string;
+    };
+    AccountDeletion: {
+      password: string;
+    };
     Error: {
       error: {
         /** @description Stable and machine-readable, such as not_found. */
@@ -86,9 +394,187 @@ export interface components {
         message: string;
       };
     };
+    BrowserErrorReporting:
+      | {
+          /** @enum {string} */
+          provider: "endpoint";
+        }
+      | {
+          /** @enum {string} */
+          provider: "sentry";
+          dsn: string;
+          environment?: string;
+          release?: string;
+        }
+      | {
+          /** @enum {string} */
+          provider: "none";
+        };
+    /** @description An uncaught error, an unhandled rejection, or a render error a boundary caught. */
+    ClientErrorReport: {
+      /** @enum {string} */
+      kind: "error" | "unhandledrejection" | "render";
+      name: string;
+      message: string;
+      stack?: string;
+      /** @description The page's path, without its query string. */
+      path: string;
+    };
+    JobsStatus: {
+      /**
+       * @description Where jobs run: the API's own worker, a scheduler calling /api/jobs/run, or a jobs service (Inngest) calling the API.
+       * @enum {string}
+       */
+      runner: "worker" | "scheduler" | "service";
+      jobs: components["schemas"]["JobRun"][] | null;
+    };
+    JobRun: {
+      id: string;
+      name: string;
+      /** @enum {string} */
+      state: "queued" | "active" | "retrying" | "completed" | "failed" | "cancelled";
+      /** Format: date-time */
+      createdAt: string;
+      /** Format: date-time */
+      completedAt: string | null;
+    };
+    SampleJobQueued: {
+      /** @description The queued job's id, or null when a repeat was ignored. */
+      id: string | null;
+    };
+    DueJobsRun: {
+      completed: number;
+      failed: number;
+    };
+    Billing: {
+      /** @description Whether checkout and webhooks work, that is, the provider's keys are set. */
+      configured: boolean;
+      plans: components["schemas"]["Plan"][];
+      subscription: components["schemas"]["Subscription"] | null;
+    };
+    Plan: {
+      id: string;
+      name: string;
+      description: string;
+    };
+    /** @description The user's most recently updated subscription. */
+    Subscription: {
+      /** @description One of the plans' ids, or null for a price no plan uses. */
+      planId: string | null;
+      /** @enum {string} */
+      status:
+        | "active"
+        | "trialing"
+        | "past_due"
+        | "unpaid"
+        | "paused"
+        | "incomplete"
+        | "incomplete_expired"
+        | "canceled";
+      /** Format: date-time */
+      currentPeriodEnd: string | null;
+      cancelAtPeriodEnd: boolean;
+      /** @description Whether the subscription grants the paid features (active or trialing). */
+      entitled: boolean;
+    };
+    CheckoutRequest: {
+      planId: string;
+    };
+    BillingRedirect: {
+      /** Format: uri */
+      url: string;
+    };
+    WebhookReceipt: {
+      /** @enum {boolean} */
+      received: true;
+      /** @enum {string} */
+      result: "applied" | "ignored" | "duplicate";
+    };
+    PushDevice: {
+      /** @description The device's push token, as the push service gave it to the app. */
+      token: string;
+      /**
+       * @description The service that delivers to the token: Expo's push service for an Expo push token, Firebase Cloud Messaging for an Android device's, APNs for an Apple device's.
+       * @enum {string}
+       */
+      service: "expo" | "fcm" | "apns";
+      /** @enum {string} */
+      platform: "ios" | "android";
+    };
+    PushDeviceRemoval: {
+      token: string;
+    };
+    PushTestResult: {
+      /** @description The devices the push service took the notification for. */
+      sent: number;
+      /** @description Devices forgotten because their push service no longer knows their token, such as an uninstalled app's. */
+      removed: number;
+    };
   };
-  responses: never;
-  parameters: never;
+  responses: {
+    /** @description Not signed in (code unauthorized). */
+    Unauthorized: {
+      headers: {
+        [name: string]: unknown;
+      };
+      content: {
+        "application/json": components["schemas"]["Error"];
+      };
+    };
+    /** @description The module's provider is not configured on this server (code not_configured). */
+    NotConfigured: {
+      headers: {
+        [name: string]: unknown;
+      };
+      content: {
+        "application/json": components["schemas"]["Error"];
+      };
+    };
+    /** @description Too many requests from this client (code rate_limited). */
+    TooManyRequests: {
+      headers: {
+        /** @description Seconds until the client may try again. */
+        "Retry-After"?: number;
+        [name: string]: unknown;
+      };
+      content: {
+        "application/json": components["schemas"]["Error"];
+      };
+    };
+    /** @description The request body is over the operation's limit (code payload_too_large). */
+    PayloadTooLarge: {
+      headers: {
+        [name: string]: unknown;
+      };
+      content: {
+        "application/json": components["schemas"]["Error"];
+      };
+    };
+    /** @description The body is not JSON (code unsupported_media_type). Mutating operations take only JSON, which another site cannot make a browser send without the API's CORS approval. */
+    UnsupportedMediaType: {
+      headers: {
+        [name: string]: unknown;
+      };
+      content: {
+        "application/json": components["schemas"]["Error"];
+      };
+    };
+    /** @description The app's version (X-App-Version) is below the minimum the API serves (code update_required): it must update before it continues. Every operation but getHealth, getReady, and getAppVersion can answer it, to a request that sends X-App-Version. */
+    UpdateRequired: {
+      headers: {
+        [name: string]: unknown;
+      };
+      content: {
+        "application/json": components["schemas"]["Error"];
+      };
+    };
+  };
+  parameters: {
+    /** @description The installed app's version, such as 1.4.0. Below the minimum getAppVersion serves, the request gets 426 update_required (UpdateRequired). */
+    AppVersionHeader: string;
+    /** @description The platform the app runs on, for that platform's own versions and update link. Without it, the API serves the versions shared by both platforms. */
+    AppPlatformHeader: "ios" | "android";
+  };
   requestBodies: never;
   headers: never;
   pathItems: never;
@@ -160,6 +646,613 @@ export interface operations {
         };
         content: {
           "application/json": components["schemas"]["Session"];
+        };
+      };
+      426: components["responses"]["UpdateRequired"];
+    };
+  };
+  getAppVersion: {
+    parameters: {
+      query?: never;
+      header?: {
+        /** @description The platform the app runs on, for that platform's own versions and update link. Without it, the API serves the versions shared by both platforms. */
+        "X-App-Platform"?: components["parameters"]["AppPlatformHeader"];
+      };
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description The versions, each null until the API sets it. */
+      200: {
+        headers: {
+          /** @description no-store, so a new minimum version applies on the app's next check. */
+          "Cache-Control"?: string;
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["AppVersion"];
+        };
+      };
+    };
+  };
+  getAccount: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description The account. */
+      200: {
+        headers: {
+          /** @description no-store. */
+          "Cache-Control"?: string;
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["Account"];
+        };
+      };
+      401: components["responses"]["Unauthorized"];
+      426: components["responses"]["UpdateRequired"];
+      503: components["responses"]["NotConfigured"];
+    };
+  };
+  updateProfile: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["ProfileUpdate"];
+      };
+    };
+    responses: {
+      /** @description Saved. */
+      204: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description Not a valid profile (code invalid_input). */
+      400: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["Error"];
+        };
+      };
+      401: components["responses"]["Unauthorized"];
+      413: components["responses"]["PayloadTooLarge"];
+      415: components["responses"]["UnsupportedMediaType"];
+      426: components["responses"]["UpdateRequired"];
+      503: components["responses"]["NotConfigured"];
+    };
+  };
+  deleteAccount: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["AccountDeletion"];
+      };
+    };
+    responses: {
+      /** @description Deleted. */
+      204: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description No password (code invalid_input). */
+      400: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["Error"];
+        };
+      };
+      401: components["responses"]["Unauthorized"];
+      /** @description The password is not correct (code invalid_password). */
+      403: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["Error"];
+        };
+      };
+      /** @description A subscription is still active (code active_subscription); cancel it first, since a deleted account cannot manage its billing. */
+      409: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["Error"];
+        };
+      };
+      413: components["responses"]["PayloadTooLarge"];
+      415: components["responses"]["UnsupportedMediaType"];
+      426: components["responses"]["UpdateRequired"];
+      429: components["responses"]["TooManyRequests"];
+      /** @description Deleting accounts is not set up on this server (code not_configured), or the rate limit cannot be checked now (code unavailable). */
+      503: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["Error"];
+        };
+      };
+    };
+  };
+  getBrowserErrorReporting: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Post errors back here, send them to Sentry, or do not report them. */
+      200: {
+        headers: {
+          /** @description no-store, so a new setting applies on the next page load. */
+          "Cache-Control"?: string;
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["BrowserErrorReporting"];
+        };
+      };
+      426: components["responses"]["UpdateRequired"];
+    };
+  };
+  reportBrowserError: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["ClientErrorReport"];
+      };
+    };
+    responses: {
+      /** @description Reported. */
+      204: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description Not an error report (code invalid_report). */
+      400: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["Error"];
+        };
+      };
+      413: components["responses"]["PayloadTooLarge"];
+      415: components["responses"]["UnsupportedMediaType"];
+      426: components["responses"]["UpdateRequired"];
+      429: components["responses"]["TooManyRequests"];
+    };
+  };
+  getJobsStatus: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description The runner, and the sample jobs queued by the signed-in user (or by anyone signed out), newest first; jobs is null when the queue could not be read. */
+      200: {
+        headers: {
+          /** @description no-store, so each page load lists the jobs as they are. */
+          "Cache-Control"?: string;
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["JobsStatus"];
+        };
+      };
+      426: components["responses"]["UpdateRequired"];
+    };
+  };
+  runSampleJob: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: {
+      content: {
+        "application/json": Record<string, never>;
+      };
+    };
+    responses: {
+      /** @description Queued, or ignored as a repeat (id null). */
+      202: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["SampleJobQueued"];
+        };
+      };
+      415: components["responses"]["UnsupportedMediaType"];
+      426: components["responses"]["UpdateRequired"];
+      /** @description The queue could not be reached (code unavailable). */
+      503: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["Error"];
+        };
+      };
+    };
+  };
+  runDueJobs: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description The jobs that finished, and the attempts that failed, retries included. */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["DueJobsRun"];
+        };
+      };
+      401: components["responses"]["Unauthorized"];
+      /** @description CRON_SECRET is not set, so no scheduler may run jobs (code not_found). */
+      404: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["Error"];
+        };
+      };
+      426: components["responses"]["UpdateRequired"];
+    };
+  };
+  inspectInngest: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      426: components["responses"]["UpdateRequired"];
+      /** @description Inngest reads the app's jobs. The SDK defines the answer. */
+      default: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+    };
+  };
+  syncInngest: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      426: components["responses"]["UpdateRequired"];
+      /** @description Registers the app's jobs with Inngest. The SDK defines the answer. */
+      default: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+    };
+  };
+  runInngestJob: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      426: components["responses"]["UpdateRequired"];
+      /** @description The job's result. The SDK defines the answer. */
+      default: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+    };
+  };
+  getBilling: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Billing for the current user; subscription is null when signed out, when the user never subscribed, or while payments are not configured. */
+      200: {
+        headers: {
+          /** @description no-store, so a new subscription shows on the next load. */
+          "Cache-Control"?: string;
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["Billing"];
+        };
+      };
+      426: components["responses"]["UpdateRequired"];
+    };
+  };
+  startCheckout: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["CheckoutRequest"];
+      };
+    };
+    responses: {
+      /** @description Send the browser to this URL; it comes back to the frontend's dashboard. */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["BillingRedirect"];
+        };
+      };
+      /** @description No such plan (code invalid_plan). */
+      400: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["Error"];
+        };
+      };
+      401: components["responses"]["Unauthorized"];
+      415: components["responses"]["UnsupportedMediaType"];
+      426: components["responses"]["UpdateRequired"];
+      503: components["responses"]["NotConfigured"];
+    };
+  };
+  openBillingPortal: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** @description An empty JSON object; like every mutating operation, it takes only JSON. */
+    requestBody?: {
+      content: {
+        "application/json": Record<string, never>;
+      };
+    };
+    responses: {
+      /** @description Send the browser to this URL; it comes back to the frontend's dashboard. */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["BillingRedirect"];
+        };
+      };
+      401: components["responses"]["Unauthorized"];
+      /** @description The user never subscribed, so has no billing account (code no_billing_account). */
+      409: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["Error"];
+        };
+      };
+      415: components["responses"]["UnsupportedMediaType"];
+      426: components["responses"]["UpdateRequired"];
+      503: components["responses"]["NotConfigured"];
+    };
+  };
+  receivePaymentWebhook: {
+    parameters: {
+      query?: never;
+      header?: {
+        "Stripe-Signature"?: string;
+      };
+      path?: never;
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": Record<string, never>;
+      };
+    };
+    responses: {
+      /** @description Received; applied, ignored as irrelevant, or a duplicate of an applied event. */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["WebhookReceipt"];
+        };
+      };
+      /** @description Not signed by the provider (code invalid_signature). */
+      400: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["Error"];
+        };
+      };
+      413: components["responses"]["PayloadTooLarge"];
+      426: components["responses"]["UpdateRequired"];
+      /** @description Applying the event failed, so the provider retries it (code webhook_failed). */
+      500: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["Error"];
+        };
+      };
+      503: components["responses"]["NotConfigured"];
+    };
+  };
+  registerPushDevice: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["PushDevice"];
+      };
+    };
+    responses: {
+      /** @description Saved. */
+      204: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description Not a push token, or not one of a service this server sends through (code invalid_input): Expo push tokens with Expo's push service, FCM and APNs tokens with FCM and APNs. */
+      400: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["Error"];
+        };
+      };
+      401: components["responses"]["Unauthorized"];
+      413: components["responses"]["PayloadTooLarge"];
+      415: components["responses"]["UnsupportedMediaType"];
+      426: components["responses"]["UpdateRequired"];
+      503: components["responses"]["NotConfigured"];
+    };
+  };
+  removePushDevice: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["PushDeviceRemoval"];
+      };
+    };
+    responses: {
+      /** @description Forgotten, or never saved. */
+      204: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description No token (code invalid_input). */
+      400: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["Error"];
+        };
+      };
+      413: components["responses"]["PayloadTooLarge"];
+      415: components["responses"]["UnsupportedMediaType"];
+      426: components["responses"]["UpdateRequired"];
+      503: components["responses"]["NotConfigured"];
+    };
+  };
+  sendTestPush: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: {
+      content: {
+        "application/json": Record<string, never>;
+      };
+    };
+    responses: {
+      /** @description Sent. */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["PushTestResult"];
+        };
+      };
+      401: components["responses"]["Unauthorized"];
+      415: components["responses"]["UnsupportedMediaType"];
+      426: components["responses"]["UpdateRequired"];
+      429: components["responses"]["TooManyRequests"];
+      /** @description No push service is set up on this server (code not_configured), or the push service or the rate limit cannot be reached now (code unavailable). */
+      503: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["Error"];
         };
       };
     };

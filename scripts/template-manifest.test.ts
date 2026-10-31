@@ -3,7 +3,7 @@ import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { posix } from "node:path";
 import { describe, expect, it } from "vitest";
 
-// create-clubedge-app scaffolds projects from this repository, assembled from packs (schema 4):
+// create-clubedge-app scaffolds projects from this repository, assembled from packs (schema 5):
 //
 //   clubedge.template.json            slots (where apps land), the module order, shared files
 //   clubedge/modules/<id>.json        a module: options, packages, scripts, shared files
@@ -60,7 +60,8 @@ const manifest = {
         name: stack.name,
         app: stack.app,
         envExample: inApp(stack.app, stack.envExample),
-        dockerfile: inApp(stack.app, stack.dockerfile),
+        // A mobile shell runs on devices, not from an image.
+        ...(stack.dockerfile ? { dockerfile: inApp(stack.app, stack.dockerfile) } : {}),
       },
     ]),
   ),
@@ -78,10 +79,29 @@ const manifest = {
     ...stackDescriptors.map((stack) => `${stack.app}/clubedge.stack.json`),
   ],
 };
-const frameworks = Object.entries<Record<string, string>>(manifest.frameworks);
+const frameworks = Object.entries<{
+  name: string;
+  app: string;
+  envExample: string;
+  dockerfile?: string;
+}>(manifest.frameworks);
 
 /** Maps a generated-project path into the given framework's app in this repository. */
 const inFramework = (path: string, app: string) => path.replace(manifest.app, app);
+
+/**
+ * Stacks that name the project in a site config of their own: the framework slot's, and those of
+ * slots with a siteConfig. A mobile shell reads its web app's.
+ */
+const withSiteConfig = new Set(
+  stackDescriptors
+    .filter((stack) =>
+      Object.entries<{ roles: string[]; siteConfig?: string }>(root.slots).some(
+        ([id, s]) => s.roles.includes(stack.role) && (id === "framework" || s.siteConfig),
+      ),
+    )
+    .map((stack) => stack.id),
+);
 
 describe("stack packs", () => {
   it.each(stackDescriptors.map((stack) => [stack.app, stack]))(
@@ -108,16 +128,81 @@ describe("stack packs", () => {
     },
   );
 
+  it("lets every frontend work with every API", () => {
+    // The CLI offers the options that every selected stack listing a module implements. A
+    // frontend lists only the modules it takes part in, and offers "none" with them, so it still
+    // pairs with an API that has none of that module yet.
+    const implemented = (stack: (typeof stackDescriptors)[number], id: string) =>
+      stack.modules?.[id]
+        ? Object.keys(stack.modules[id]).flatMap((key) => key.split("|"))
+        : undefined;
+    const withRole = (role: string) => stackDescriptors.filter((stack) => stack.role === role);
+    for (const [id, module] of Object.entries<{ scope?: string; options: object }>(
+      moduleDescriptors,
+    )) {
+      if (module.scope === "project") continue;
+      for (const frontend of withRole("frontend")) {
+        const offered = implemented(frontend, id);
+        if (offered && "none" in module.options) {
+          expect(offered, `${frontend.id}: ${id}`).toContain("none");
+        }
+        for (const api of withRole("api")) {
+          const choices = [offered, implemented(api, id)].filter((list) => list !== undefined);
+          expect(choices, `${frontend.id} with ${api.id}: neither implements ${id}`).not.toEqual(
+            [],
+          );
+          const common = Object.keys(module.options).filter((option) =>
+            choices.every((list) => list.includes(option)),
+          );
+          expect(common, `${frontend.id} with ${api.id}: ${id}`).not.toEqual([]);
+        }
+      }
+    }
+  });
+
+  it("lets every mobile app work with every API", () => {
+    // A mobile app lists the options it implements, such as the sign-in providers it has
+    // screens for; with each API, one of them must remain, and "none" where the module has it.
+    const implemented = (stack: (typeof stackDescriptors)[number], id: string) =>
+      stack.modules?.[id]
+        ? Object.keys(stack.modules[id]).flatMap((key) => key.split("|"))
+        : undefined;
+    const withRole = (role: string) => stackDescriptors.filter((stack) => stack.role === role);
+    for (const [id, module] of Object.entries<{ scope?: string; options: object }>(
+      moduleDescriptors,
+    )) {
+      if (module.scope === "project") continue;
+      for (const mobile of withRole("mobile")) {
+        const offered = implemented(mobile, id);
+        if (!offered) continue;
+        if ("none" in module.options) expect(offered, `${mobile.id}: ${id}`).toContain("none");
+        for (const api of withRole("api")) {
+          const theirs = implemented(api, id) ?? Object.keys(module.options);
+          const common = offered.filter((option) => theirs.includes(option));
+          expect(common, `${mobile.id} with ${api.id}: ${id}`).not.toEqual([]);
+        }
+      }
+    }
+  });
+
   it("gives every stack its own id", () => {
     const ids = stackDescriptors.map((stack) => stack.id);
     expect(new Set(ids).size).toBe(ids.length);
     expect(ids).toContain(slot.default);
   });
+
+  it("gives every advisory pnpm audit skips to the stack whose dependencies need it", () => {
+    // The CLI removes a stack's auditIgnores from projects without the stack, so each advisory
+    // package.json skips belongs to a stack, and projects without it audit that advisory again.
+    const skipped: string[] = readJson("package.json").pnpm?.auditConfig?.ignoreGhsas ?? [];
+    const owned = stackDescriptors.flatMap<string>((stack) => stack.auditIgnores ?? []);
+    expect([...skipped].sort()).toEqual([...new Set(owned)].sort());
+  });
 });
 
 describe("clubedge.template.json", () => {
   it("uses the schema version the CLI understands", () => {
-    expect(manifest.schemaVersion).toBe(4);
+    expect(manifest.schemaVersion).toBe(6);
     expect(manifest.packageManager).toBe("pnpm");
   });
 
@@ -126,23 +211,23 @@ describe("clubedge.template.json", () => {
     expect(manifest.frameworks[slot.default].app).toBe(manifest.app);
   });
 
-  it.each(frameworks)("points at files that exist for %s", (_id, framework) => {
-    for (const path of [
-      framework.app,
-      framework.envExample,
-      framework.dockerfile,
-      inFramework(manifest.siteConfig, framework.app),
-    ]) {
+  it.each(frameworks)("points at files that exist for %s", (id, framework) => {
+    const paths = [framework.app, framework.envExample, framework.dockerfile];
+    if (withSiteConfig.has(id)) paths.push(inFramework(manifest.siteConfig, framework.app));
+    for (const path of paths.filter((path) => path !== undefined)) {
       expect(existsSync(path), path).toBe(true);
     }
     expect(framework.name).toEqual(expect.any(String));
   });
 
-  it.each(frameworks)("keeps the same project identity in %s", (_id, framework) => {
-    expect(readJson(inFramework(manifest.siteConfig, framework.app))).toEqual(
-      readJson(manifest.siteConfig),
-    );
-  });
+  it.each(frameworks.filter(([id]) => withSiteConfig.has(id)))(
+    "keeps the same project identity in %s",
+    (_id, framework) => {
+      expect(readJson(inFramework(manifest.siteConfig, framework.app))).toEqual(
+        readJson(manifest.siteConfig),
+      );
+    },
+  );
 
   it("names the site config fields the CLI rewrites", () => {
     expect(readJson(manifest.siteConfig)).toMatchObject({
@@ -162,6 +247,20 @@ describe("clubedge.template.json", () => {
     // Generated projects have no manifest, so this test must not be copied into them either.
     expect(manifest.exclude).toEqual(
       expect.arrayContaining(["clubedge.template.json", "scripts/template-manifest.test.ts"]),
+    );
+  });
+
+  it("titles every project's README", () => {
+    // The CLI names the project in the README's first heading and records its provenance under
+    // it, so the hidden title block must be kept for every framework, and for none.
+    const title = /<!-- clubedge:if framework=([a-z0-9|-]+)\r?\n# /.exec(
+      readFileSync("README.md", "utf8"),
+    );
+    const frameworkStacks = stackDescriptors
+      .filter((stack) => slot.roles.includes(stack.role))
+      .map((stack) => stack.id);
+    expect(title?.[1]?.split("|").sort()).toEqual(
+      [...frameworkStacks, ...(slot.optional ? ["none"] : [])].sort(),
     );
   });
 
@@ -283,8 +382,11 @@ describe("clubedge.template.json modules", () => {
   it.each(manifest.conditional.map((file: string) => [file]))(
     "%s has balanced blocks that name real modules and options",
     (file) => {
-      // Each slot's stacks (and "none" for optional slots), then each module's options.
-      const slots = Object.entries<{ roles: string[]; default?: string }>(root.slots);
+      // Each slot's stacks (and "none" for slots that can be left empty: those without a
+      // default, and optional ones), then each module's options.
+      const slots = Object.entries<{ roles: string[]; default?: string; optional?: boolean }>(
+        root.slots,
+      );
       const known: Record<string, string[]> = {
         ...Object.fromEntries(
           slots.map(([id, slot]) => [
@@ -293,7 +395,7 @@ describe("clubedge.template.json modules", () => {
               ...stackDescriptors
                 .filter((stack) => slot.roles.includes(stack.role))
                 .map((stack) => stack.id),
-              ...(slot.default ? [] : ["none"]),
+              ...(slot.default && !slot.optional ? [] : ["none"]),
             ],
           ]),
         ),

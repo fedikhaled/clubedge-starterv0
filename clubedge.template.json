@@ -1,5 +1,5 @@
 {
-  "schemaVersion": 4,
+  "schemaVersion": 6,
   "name": "clubedge-starter",
   "packageManager": "pnpm",
   "siteConfig": "apps/web/src/config/site.json",
@@ -16,11 +16,19 @@
       },
       "dockerfile": "Dockerfile",
       "roles": ["fullstack", "frontend"],
-      "default": "next"
+      "default": "next",
+      "optional": true,
+      "fallback": "api",
+      "packages": {
+        "@clubedge/ui": "packages/ui"
+      },
+      "files": ["e2e", "playwright.config.ts", "scripts/smoke-generated-app.mjs"],
+      "filesWhenEmpty": ["apps/expo/src/app/reset-password.tsx"],
+      "scripts": ["test:e2e", "test:e2e:ui", "docker:build", "docker:start"]
     },
     "api": {
       "name": "API",
-      "question": "Which API should the frontend call?",
+      "question": "Which API should the apps call?",
       "path": "apps/api",
       "package": "@clubedge/api",
       "env": {
@@ -33,6 +41,34 @@
       "packages": {
         "@clubedge/contract": "packages/contract"
       }
+    },
+    "mobile": {
+      "name": "Mobile app",
+      "question": "Add a native mobile app?",
+      "path": "apps/mobile",
+      "package": "@clubedge/mobile-app",
+      "env": {
+        "example": "apps/mobile/.env.example",
+        "target": "apps/mobile/.env.local"
+      },
+      "roles": ["mobile"],
+      "siteConfig": "apps/mobile/src/config/site.json",
+      "files": [".github/workflows/expo-release.yml"]
+    },
+    "shell": {
+      "name": "Mobile shell",
+      "question": "Package the web app as a mobile app?",
+      "path": "apps/shell",
+      "package": "@clubedge/shell",
+      "env": {
+        "example": "apps/shell/.env.example",
+        "target": "apps/shell/.env.local"
+      },
+      "roles": ["shell"],
+      "packages": {
+        "@clubedge/mobile": "packages/mobile"
+      },
+      "files": [".github/workflows/shell-release.yml"]
     }
   },
   "modules": [
@@ -43,6 +79,8 @@
     "payments",
     "jobs",
     "observability",
+    "push",
+    "ota",
     "infra",
     "deploy"
   ],
@@ -53,26 +91,70 @@
     "apps/api-fastapi/.env.example",
     ".github/workflows/ci.yml",
     ".github/workflows/deploy.yml",
+    ".railway/railway.ts",
     ".github/workflows/preview.yml",
+    ".gitignore",
+    ".prettierignore",
     "AGENTS.md",
     "README.md",
     "apps/vite/src/routes/index.tsx",
     "SETUP.md",
     "docker-compose.dev.yml",
     "docker-compose.yml",
+    "eslint.config.mjs",
     "render.yaml",
     "supabase/config.toml"
   ],
   "exclude": [
     ".github/assets",
     ".github/dependabot.yml",
+    ".github/workflows/demo-app.yml",
     ".github/workflows/starter.yml",
+    ".github/workflows/starter-ios.yml",
     ".github/workflows/stack-previews.yml",
     "ROADMAP.md",
+    "apps/api/src/server/variants/auth.better-auth.test.ts",
+    "apps/vite/src/lib/demo.test.ts",
+    "apps/api-fastapi/tests/test_auth_variants.py",
     "clubedge.template.json",
     "scripts/stack-preview-render.mjs",
     "scripts/stack-preview-generate.mjs",
     "scripts/stack-preview-supabase.mjs",
-    "scripts/template-manifest.test.ts"
+    "scripts/clubedge-upgrade-workflow.test.ts",
+    "scripts/mobile-app.test.ts",
+    "scripts/template-manifest.test.ts",
+    "scripts/vite-api-routes.test.ts",
+    "scripts/vite-client-ip.test.ts",
+    "scripts/workspace-versions.test.ts"
+  ],
+  "rules": [
+    {
+      "when": "framework=none && payments!=none",
+      "message": "Payments send users back to the website's pages, and a project without a website has none: choose --payments none, or a web app with --framework."
+    },
+    {
+      "when": "framework=none && api=fastapi && auth=better-auth",
+      "message": "Without a website, Better Auth runs in the API, and FastAPI cannot run it: choose --api hono, another --auth, or a web app with --framework."
+    },
+    {
+      "when": "framework=none && jobs=inngest",
+      "message": "Inngest reaches the jobs through the website's address, and a project without a website has none: choose --jobs pg-boss or --jobs bullmq, which run in the API."
+    },
+    {
+      "when": "framework=none && deploy!=docker|railway",
+      "message": "Fly.io, Vercel, Netlify, and Render deploy a web app, and this project has only its API: choose --deploy docker or --deploy railway."
+    },
+    {
+      "when": "push!=none && mobile=none && shell=none",
+      "message": "Push notifications go to the mobile apps, and this project has none: add one with --mobile expo or --shell capacitor, or choose --push none."
+    },
+    {
+      "when": "push=expo && shell!=none",
+      "message": "Expo's push service reaches only the native app, not the mobile shell: choose --push native, which sends through FCM and APNs to both."
+    },
+    {
+      "when": "ota!=none && mobile=none",
+      "message": "Over-the-air updates are for the native app: add it with --mobile expo, or choose --ota none."
+    }
   ]
 }

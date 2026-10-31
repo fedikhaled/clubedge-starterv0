@@ -1,6 +1,6 @@
 {
   "name": "@clubedge/start",
-  "version": "0.24.1",
+  "version": "0.30.0",
   "private": true,
   "license": "Apache-2.0",
   "type": "module",
@@ -44,7 +44,7 @@
     "react": "^19.2.0",
     "react-dom": "^19.2.0",
     "use-sync-external-store": "^1.7.0",
-    "zod": "^4.1.5"
+    "zod": "^4.6.7"
   },
   "devDependencies": {
     "@tailwindcss/vite": "^4.3.3",

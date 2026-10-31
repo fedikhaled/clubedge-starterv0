@@ -50,7 +50,7 @@ export interface AuthProvider {
   getUser(): Promise<AuthUser | null>;
   signInWithPassword(
     credentials: Credentials,
-  ): Promise<Result<AuthUser, "invalid-credentials" | "email-not-verified">>;
+  ): Promise<Result<AuthUser, "invalid-credentials" | "email-not-verified" | "rate-limited">>;
   signUp(
     credentials: Credentials & { emailRedirectTo: string },
   ): Promise<Result<SignUpOutcome, "signup-failed">>;

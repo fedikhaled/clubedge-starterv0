@@ -37,4 +37,16 @@ describe("createMemoryCache", () => {
   it("rejects a TTL that is not positive", async () => {
     await expect(createMemoryCache().set("a", 1, 0)).rejects.toThrow("positive");
   });
+
+  it("rejects what Redis rejects: part of a second, and a value it cannot store", async () => {
+    const cache = createMemoryCache();
+    await expect(cache.set("a", 1, 0.5)).rejects.toThrow("whole number");
+    await expect(cache.set("a", undefined, 60)).rejects.toThrow("JSON serializable");
+  });
+
+  it("reads a value back as JSON, as the Redis adapter returns it", async () => {
+    const cache = createMemoryCache();
+    await cache.set("day", new Date("2026-01-02T00:00:00.000Z"), 60);
+    expect(await cache.get("day")).toBe("2026-01-02T00:00:00.000Z");
+  });
 });

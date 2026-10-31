@@ -1,12 +1,9 @@
 import { NextResponse, type NextRequest } from "next/server";
 import type { CookieStore } from "@clubedge/auth";
-import { createSupabaseAuth } from "@clubedge/auth-supabase";
-import { getSupabaseAuthEnv } from "@/env/auth";
+import { refreshProxySession } from "@/server/proxy-session";
 
 export async function proxy(request: NextRequest) {
   let response = NextResponse.next({ request });
-  const env = getSupabaseAuthEnv();
-  if (!env) return response;
 
   // Refreshed cookies must reach both the downstream request and the browser response.
   const cookies: CookieStore = {
@@ -18,8 +15,7 @@ export async function proxy(request: NextRequest) {
     },
   };
 
-  const auth = createSupabaseAuth({ ...env, cookies });
-  await auth.refreshSession();
+  await refreshProxySession(cookies);
   return response;
 }
 
