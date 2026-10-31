@@ -690,6 +690,31 @@ importers:
         specifier: ^5.9.2
         version: 5.9.3
 
+  packages/authorization:
+    dependencies:
+      '@clubedge/core':
+        specifier: workspace:*
+        version: link:../core
+      '@clubedge/db':
+        specifier: workspace:*
+        version: link:../db
+      drizzle-orm:
+        specifier: ^0.45.4
+        version: 0.45.4(@electric-sql/pglite@0.5.8)(@opentelemetry/api@1.10.0)(@types/pg@8.15.6)(@upstash/redis@1.39.0)(expo-sqlite@58.0.14(expo@58.0.19)(react-native@0.88.0(@babel/core@7.29.7)(@react-native/metro-config@0.88.0(@babel/core@7.29.7))(@types/react@19.3.0)(react@19.3.1))(react@19.3.1))(kysely@0.29.6)(pg@8.23.1)(postgres@3.4.9)
+    devDependencies:
+      '@electric-sql/pglite':
+        specifier: 0.5.8
+        version: 0.5.8
+      drizzle-kit:
+        specifier: ^0.31.4
+        version: 0.31.11
+      tsx:
+        specifier: ^4.20.5
+        version: 4.23.15
+      typescript:
+        specifier: ^5.9.2
+        version: 5.9.3
+
   packages/cache:
     devDependencies:
       typescript:
@@ -12078,9 +12103,7 @@ snapshots:
       metro-runtime: 0.87.1
     transitivePeerDependencies:
       - '@babel/core'
-      - bufferutil
       - supports-color
-      - utf-8-validate
 
   '@react-native/normalize-colors@0.88.0': {}
 
