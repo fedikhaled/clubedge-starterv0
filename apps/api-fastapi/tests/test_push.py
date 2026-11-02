@@ -194,6 +194,26 @@ def test_refuses_test_notifications_while_the_limit_cannot_be_checked() -> None:
     assert response.json()["error"]["code"] == "unavailable"
 
 
+def test_limits_the_devices_each_user_registers() -> None:
+    service = MemoryPush()
+    app = app_with(service, create_rate_limiter=one_per_window)
+    assert post(app, "/api/push/devices", DEVICE).status_code == 204
+    other = {**DEVICE, "token": "ExponentPushToken[ada-tablet]"}
+    limited = post(app, "/api/push/devices", other)
+    assert limited.status_code == 429
+    assert limited.json()["error"]["code"] == "rate_limited"
+    assert int(limited.headers["retry-after"]) > 0
+    assert list(service.devices) == [TOKEN]
+
+
+def test_refuses_registrations_while_the_limit_cannot_be_checked() -> None:
+    service = MemoryPush()
+    response = post(app_with(service, create_rate_limiter=unavailable), "/api/push/devices", DEVICE)
+    assert response.status_code == 503
+    assert response.json()["error"]["code"] == "unavailable"
+    assert service.devices == {}
+
+
 @dataclass
 class FakeCursor:
     rows: list[tuple[object, ...]]
@@ -228,10 +248,20 @@ def database(monkeypatch: pytest.MonkeyPatch, rows: list[tuple[object, ...]]) ->
 def test_saves_a_token_for_whoever_signs_in_on_the_device(monkeypatch: pytest.MonkeyPatch) -> None:
     db = database(monkeypatch, [])
     asyncio.run(push.register("row-1", DEVICE))
-    [(statement, params)] = db.statements
+    [(statement, params), _] = db.statements
     assert statement.startswith("insert into push_devices (token, user_id, service, platform)")
     assert "on conflict (token) do update set user_id = excluded.user_id" in statement
     assert params == (TOKEN, "row-1", "expo", "ios")
+
+
+def test_keeps_the_devices_registered_most_recently(monkeypatch: pytest.MonkeyPatch) -> None:
+    db = database(monkeypatch, [])
+    asyncio.run(push.register("row-1", DEVICE))
+    [_, (statement, params)] = db.statements
+    # The app registers again at each start, so updated_at, not created_at, tells a phone in use.
+    assert statement.startswith("delete from push_devices where user_id = %s and token <> %s")
+    assert "order by updated_at desc limit %s" in statement
+    assert params == ("row-1", TOKEN, "row-1", TOKEN, push.MAX_DEVICES_PER_USER - 1)
 
 
 class OneProvider:

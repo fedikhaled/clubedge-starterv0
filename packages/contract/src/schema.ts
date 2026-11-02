@@ -288,7 +288,7 @@ export interface paths {
     };
     get?: never;
     put?: never;
-    /** Saves this device's push token for the signed-in user, who then gets notifications on it. A token saved for another user moves to this one, as when someone else signs in on the device. The app sends it again at each start, since a push service can change a token. */
+    /** Saves this device's push token for the signed-in user, who then gets notifications on it. A token saved for another user moves to this one, as when someone else signs in on the device. The app sends it again at each start, since a push service can change a token. An account keeps at most 20 devices: saving another forgets the one saved longest ago. */
     post: operations["registerPushDevice"];
     delete?: never;
     options?: never;
@@ -1182,7 +1182,16 @@ export interface operations {
       413: components["responses"]["PayloadTooLarge"];
       415: components["responses"]["UnsupportedMediaType"];
       426: components["responses"]["UpdateRequired"];
-      503: components["responses"]["NotConfigured"];
+      429: components["responses"]["TooManyRequests"];
+      /** @description No push service is set up on this server (code not_configured), or the rate limit cannot be reached now (code unavailable). */
+      503: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["Error"];
+        };
+      };
     };
   };
   removePushDevice: {

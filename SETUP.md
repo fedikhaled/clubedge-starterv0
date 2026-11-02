@@ -1062,7 +1062,7 @@ With [EAS Update](https://docs.expo.dev/eas-update/introduction/), a change to t
 
 ## Push notifications
 
-A signed-in user turns notifications on in the app's settings, which asks for the phone's permission and saves the device's push token with the API (`POST /api/push/devices`); **Send a test notification** then sends one to each of their devices. The app sends its token again at each start, as a push service can change it, and forgets it when notifications are turned off or the user signs out, so a signed-out phone gets no more of the account's notifications. A tapped notification opens the screen its data names (`url`), and the API forgets the tokens of uninstalled apps.
+A signed-in user turns notifications on in the app's settings, which asks for the phone's permission and saves the device's push token with the API (`POST /api/push/devices`); **Send a test notification** then sends one to each of their devices. The app sends its token again at each start, as a push service can change it, and forgets it when notifications are turned off or the user signs out, so a signed-out phone gets no more of the account's notifications. A tapped notification opens the screen its data names (`url`), and the API forgets the tokens of uninstalled apps. A push token is a bearer capability, naming one device to its push service: whoever holds it can stop that device's notifications, which is why forgetting one needs no session, but it reads nothing. An account keeps at most 20 devices, the one registered longest ago forgotten when another is registered, and registrations per account are rate limited.
 
 <!-- clubedge:end -->
 <!-- clubedge:if push!=none && api=hono -->

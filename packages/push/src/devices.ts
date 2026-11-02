@@ -1,4 +1,4 @@
-import { eq, inArray } from "drizzle-orm";
+import { and, desc, eq, inArray, ne, notInArray } from "drizzle-orm";
 import type { Database } from "@clubedge/db";
 import { pushDevices } from "./schema";
 import type {
@@ -10,19 +10,46 @@ import type {
   PushService,
 } from "./types";
 
+/**
+ * The devices one user keeps. Registering another forgets the one registered longest ago: an
+ * account cannot fill the table with made-up tokens and spend the push provider's quota on every
+ * test notification. The app registers again at each start, so a phone in use stays.
+ */
+export const maxDevicesPerUser = 20;
+
 /** The push tokens of the app's users, in the push_devices table. */
 export function createPushDevices(db: Database) {
   return {
     /** Saves the token for the user; a token saved for someone else moves to this user. */
     async register(userId: string, device: PushDevice): Promise<void> {
       const { token, service, platform } = device;
-      await db
-        .insert(pushDevices)
-        .values({ token, userId, service, platform })
-        .onConflictDoUpdate({
-          target: pushDevices.token,
-          set: { userId, service, platform, updatedAt: new Date() },
-        });
+      await db.transaction(async (tx) => {
+        await tx
+          .insert(pushDevices)
+          .values({ token, userId, service, platform })
+          .onConflictDoUpdate({
+            target: pushDevices.token,
+            set: { userId, service, platform, updatedAt: new Date() },
+          });
+        // The new token stays even if its registration ties with older ones on the clock; the
+        // rest keep the newest registrations.
+        const newest = await tx
+          .select({ token: pushDevices.token })
+          .from(pushDevices)
+          .where(and(eq(pushDevices.userId, userId), ne(pushDevices.token, token)))
+          .orderBy(desc(pushDevices.updatedAt))
+          .limit(maxDevicesPerUser - 1);
+        await tx.delete(pushDevices).where(
+          and(
+            eq(pushDevices.userId, userId),
+            ne(pushDevices.token, token),
+            notInArray(
+              pushDevices.token,
+              newest.map((row) => row.token),
+            ),
+          ),
+        );
+      });
     },
 
     /** Forgets a token, such as when the app signs out or turns notifications off. */

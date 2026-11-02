@@ -513,6 +513,7 @@ paths:
         Saves this device's push token for the signed-in user, who then gets notifications on it.
         A token saved for another user moves to this one, as when someone else signs in on the
         device. The app sends it again at each start, since a push service can change a token.
+        An account keeps at most 20 devices: saving another forgets the one saved longest ago.
       x-clubedge-module: push
       security:
         - bearerAuth: []
@@ -543,8 +544,16 @@ paths:
           $ref: "#/components/responses/UnsupportedMediaType"
         "426":
           $ref: "#/components/responses/UpdateRequired"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
         "503":
-          $ref: "#/components/responses/NotConfigured"
+          description: >-
+            No push service is set up on this server (code not_configured), or the rate limit
+            cannot be reached now (code unavailable).
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
   /api/push/devices/remove:
     post:
       operationId: removePushDevice

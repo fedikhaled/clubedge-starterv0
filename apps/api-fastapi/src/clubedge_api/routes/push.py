@@ -1,6 +1,10 @@
 """Push notifications' endpoints: the mobile apps save their device's push token for the
 signed-in user, forget it when they sign out, and ask for a test notification. Sending itself
-happens from the server's own code, through push.py's PushNotifications."""
+happens from the server's own code, through push.py's PushNotifications.
+
+A token is a bearer capability: it names one device to its push service, so removal needs no
+session, letting a signed-out app forget it. Knowing a token stops that device's notifications
+(and can move it to the knower's account); it reads nothing."""
 
 import logging
 import math
@@ -76,6 +80,9 @@ def push_router(
     router = APIRouter()
     # Test notifications, per user: each one reaches every device the user has.
     limiter = create_rate_limiter(5, 60)
+    # Registrations, per user: the app resends its token at each start, so this allows retries
+    # and bounds the rest; the number of devices an account keeps is capped separately.
+    registration_limiter = create_rate_limiter(10, 60)
     guards = [Depends(json_only), Depends(limit_body(MAX_BODY))]
 
     async def signed_in(request: Request) -> User:
@@ -105,6 +112,24 @@ def push_router(
                 "invalid_input",
                 f"This server sends notifications through {names}.",
                 headers=NO_STORE,
+            )
+        try:
+            limit = await registration_limiter.limit(f"push-register:{user['id']}")
+        except Exception:
+            logger.exception("Rate limiter unavailable")
+            raise ApiError(
+                503,
+                "unavailable",
+                "Saving the device is unavailable right now.",
+                headers=NO_STORE,
+            ) from None
+        if not limit.success:
+            seconds = max(1, math.ceil(limit.reset_at - time.time()))
+            raise ApiError(
+                429,
+                "rate_limited",
+                "Too many devices were registered. Try again later.",
+                headers={**NO_STORE, "Retry-After": str(seconds)},
             )
         await push.register(user, device)
         return Response(status_code=204, headers=NO_STORE)

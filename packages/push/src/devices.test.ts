@@ -4,7 +4,8 @@ import { migrate } from "drizzle-orm/pglite/migrator";
 import { fileURLToPath } from "node:url";
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { users, type Database } from "@clubedge/db";
-import { createPushDevices, sendToUser } from "./devices";
+import { createPushDevices, maxDevicesPerUser, sendToUser } from "./devices";
+import { pushDevices } from "./schema";
 import { isPushToken, type PushProvider } from "./types";
 
 const folder = (path: string) => fileURLToPath(new URL(path, import.meta.url));
@@ -73,6 +74,31 @@ describe("push devices", () => {
     await devices.register(grace, { token: expoToken("shared"), service: "expo", platform: "ios" });
     expect(await devices.forUser(ada)).toEqual([]);
     expect(await devices.forUser(grace)).toHaveLength(1);
+  });
+
+  it("keeps a bounded number of devices per user, forgetting the least recently registered", async () => {
+    const day = (index: number) => new Date(Date.UTC(2026, 0, index + 1));
+    await db.insert(pushDevices).values(
+      Array.from({ length: maxDevicesPerUser }, (_, index) => ({
+        token: expoToken(`old-${index}`),
+        userId: ada,
+        service: "expo",
+        platform: "ios",
+        createdAt: day(index),
+        updatedAt: day(index),
+      })),
+    );
+    // The first phone is still in use: its app registered again at its latest start.
+    await devices.register(ada, { token: expoToken("old-0"), service: "expo", platform: "ios" });
+    const newest = expoToken("newest");
+    await devices.register(ada, { token: newest, service: "expo", platform: "ios" });
+
+    const kept = (await devices.forUser(ada)).map(({ token }) => token);
+    expect(kept).toHaveLength(maxDevicesPerUser);
+    expect(kept).toContain(newest);
+    expect(kept).toContain(expoToken("old-0"));
+    expect(kept).not.toContain(expoToken("old-1"));
+    expect(kept).toContain(expoToken(`old-${maxDevicesPerUser - 1}`));
   });
 
   it("goes with its user", async () => {

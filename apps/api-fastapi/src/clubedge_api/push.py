@@ -65,14 +65,28 @@ def is_push_token(service: PushService, token: str) -> bool:
     return 0 < len(token) <= 4_096 and _TOKEN_SHAPES[service].fullmatch(token) is not None
 
 
+# The devices one user keeps. Registering another forgets the one registered longest ago: an
+# account cannot fill the table with made-up tokens and spend the push service's quota on every
+# test notification. The app registers again at each start, so a phone in use stays.
+MAX_DEVICES_PER_USER = 20
+
+
 async def register(user_id: str, device: PushDevice) -> None:
-    """Saves the token for the user; a token saved for someone else moves to this user."""
+    """Saves the token for the user; a token saved for someone else moves to this user. Both
+    statements run in the one unit of work connect() commits."""
+    token = device["token"]
     async with connect() as db:
         await db.execute(
             "insert into push_devices (token, user_id, service, platform) values (%s, %s, %s, %s)"
             " on conflict (token) do update set user_id = excluded.user_id,"
             " service = excluded.service, platform = excluded.platform, updated_at = now()",
-            (device["token"], user_id, device["service"], device["platform"]),
+            (token, user_id, device["service"], device["platform"]),
+        )
+        await db.execute(
+            "delete from push_devices where user_id = %s and token <> %s and token not in"
+            " (select token from push_devices where user_id = %s and token <> %s"
+            " order by updated_at desc limit %s)",
+            (user_id, token, user_id, token, MAX_DEVICES_PER_USER - 1),
         )
 
 
