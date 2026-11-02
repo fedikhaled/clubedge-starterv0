@@ -8,6 +8,7 @@ from dataclasses import replace
 import pytest
 
 from clubedge_api.payments import (
+    LIVE_STATUSES,
     Billing,
     IgnoredEvent,
     NoBillingAccountError,
@@ -67,6 +68,22 @@ def test_refuses_unsigned_webhooks_without_recording_them() -> None:
     with pytest.raises(WebhookVerificationError):
         asyncio.run(subject.handle_webhook(b"{}", {}))
     assert (store.rows, store.events) == ([], set())
+
+
+def test_records_an_event_that_arrives_after_its_account_was_deleted() -> None:
+    subject, store, provider = billing()
+    provider.next_event = SubscriptionUpdated(id="evt_5", subscription=snapshot(USER_ID))
+    assert asyncio.run(subject.handle_webhook(b"{}", SIGNED)) == "applied"
+    store.delete_user(USER_ID)
+
+    provider.next_event = SubscriptionUpdated(
+        id="evt_6",
+        subscription=replace(snapshot(USER_ID), subscription_id="sub_2", status="canceled"),
+    )
+    assert asyncio.run(subject.handle_webhook(b"{}", SIGNED)) == "ignored"
+    # Recorded, so the provider's retry is a duplicate rather than another failure.
+    assert asyncio.run(subject.handle_webhook(b"{}", SIGNED)) == "duplicate"
+    assert store.rows == []
 
 
 def test_applies_an_event_that_failed_when_the_provider_retries_it() -> None:
@@ -129,3 +146,9 @@ def test_grants_access_while_active_or_trialing() -> None:
     ]:
         assert is_entitled(store.add(USER_ID, status=status)) is entitled, status
     assert not is_entitled(None)
+
+
+def test_counts_a_past_due_subscription_as_live_and_only_ended_ones_as_not() -> None:
+    assert {"active", "trialing", "past_due", "unpaid", "paused", "incomplete"} == LIVE_STATUSES
+    assert "canceled" not in LIVE_STATUSES
+    assert "incomplete_expired" not in LIVE_STATUSES

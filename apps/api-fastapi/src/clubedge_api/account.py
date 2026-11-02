@@ -3,7 +3,7 @@ removes that row (and what references it) before the auth provider deletes the u
 
 from clubedge_api import auth, users
 from clubedge_api.contract import User
-from clubedge_api.payments import has_active_subscription  # clubedge:only payments=stripe
+from clubedge_api.payments import has_live_subscription  # clubedge:only payments=stripe
 from clubedge_api.routes.account import AccountDeletionResult, ProviderAccountDeletion
 
 
@@ -21,9 +21,11 @@ class AccountSettings:
 
     async def delete_account(self, user: User, password: str) -> AccountDeletionResult:
         # clubedge:if payments=stripe
-        # A deleted account cannot manage its billing, so an active subscription is cancelled
-        # first. The subscription is read from the database, so this holds without Stripe's keys.
-        if await has_active_subscription(await users.ensure_user_id(user)):
+        # A deleted account cannot manage its billing, and the provider would keep charging it,
+        # so deletion waits until every subscription has ended. A past_due one is live even
+        # though it does not grant access; the rows are read from the database, so this holds
+        # without Stripe's keys.
+        if await has_live_subscription(await users.ensure_user_id(user)):
             return "active-subscription"
         # clubedge:end
         return await auth.delete_account(

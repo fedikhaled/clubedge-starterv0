@@ -9,6 +9,7 @@ import { getDb } from "@/server/db";
 
 export {
   findSubscription,
+  hasLiveSubscription,
   isEntitled,
   NoBillingAccountError,
   WebhookVerificationError,

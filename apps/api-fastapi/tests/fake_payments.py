@@ -43,7 +43,14 @@ class MemorySubscriptions:
 
     rows: list[Subscription] = field(default_factory=list)
     events: set[tuple[str, str]] = field(default_factory=set)
+    # Users whose users row is gone, with the subscriptions that referenced it.
+    deleted_users: set[str] = field(default_factory=set)
     ticks: int = 0
+
+    def delete_user(self, user_id: str) -> None:
+        """Deletes the users row, and its subscriptions with it, as the foreign key cascades."""
+        self.deleted_users.add(user_id)
+        self.rows = [row for row in self.rows if row.user_id != user_id]
 
     def now(self) -> datetime:
         """A clock that moves on at each write, so the latest row is the last one written."""
@@ -141,6 +148,9 @@ class _MemoryWrites:
                 updated_at=now,
             )
         )
+
+    async def user_exists(self, user_id: str) -> bool:
+        return user_id not in self.store.deleted_users
 
 
 class FakeProvider:

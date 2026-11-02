@@ -6,7 +6,7 @@ import type { AccountService } from "@/routes/account";
 import { canDeleteAccount, deleteAccount } from "./auth";
 import { getDb } from "./db";
 // clubedge:if payments=stripe
-import { findSubscription, isEntitled } from "./payments";
+import { hasLiveSubscription } from "./payments";
 // clubedge:end
 
 /** The app-owned users row for the user, created on first use. */
@@ -22,10 +22,10 @@ export const account: AccountService = {
   },
   async deleteAccount({ user, password, request }) {
     // clubedge:if payments=stripe
-    // A deleted account cannot manage its billing, so an active subscription is cancelled first.
-    // The subscription is read from the database, so this holds even without the Stripe keys.
-    const subscription = await findSubscription(getDb(), await profileId(user));
-    if (isEntitled(subscription)) return "active-subscription";
+    // A deleted account cannot manage its billing, and the provider would keep charging it, so
+    // deletion waits until every subscription has ended. A past_due one is live even though it
+    // does not grant access; the rows are read from the database, so this holds without keys.
+    if (await hasLiveSubscription(getDb(), await profileId(user))) return "active-subscription";
     // clubedge:end
     return deleteAccount({
       user,

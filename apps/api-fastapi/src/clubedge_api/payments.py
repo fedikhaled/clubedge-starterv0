@@ -33,6 +33,13 @@ SubscriptionStatus = Literal[
 # Statuses that grant access to the paid features.
 ENTITLED_STATUSES: Final[frozenset[str]] = frozenset({"active", "trialing"})
 
+# Statuses in which the provider still holds the subscription, so it can charge, retry, or resume.
+# past_due does not grant access but is still collecting; unpaid, paused, and incomplete can still
+# become active. canceled and incomplete_expired are over.
+LIVE_STATUSES: Final[frozenset[str]] = frozenset(
+    {"active", "trialing", "past_due", "unpaid", "paused", "incomplete"}
+)
+
 # What a webhook did: a redelivered event is a "duplicate" and changes nothing.
 WebhookResult = Literal["applied", "ignored", "duplicate"]
 
@@ -150,6 +157,9 @@ class SubscriptionWrites(Protocol):
     async def insert(self, user_id: str, snapshot: SubscriptionSnapshot) -> None:
         """Adds the snapshot's subscription for the user (users.id)."""
 
+    async def user_exists(self, user_id: str) -> bool:
+        """Whether the users row still exists: an account can be deleted after an event is sent."""
+
 
 class SubscriptionStore(Protocol):
     """Where subscriptions live: PostgresSubscriptions, or a stand-in in tests."""
@@ -215,6 +225,11 @@ class Billing:
             if existing is not None:
                 await writes.update(existing, snapshot)
             elif snapshot.user_id:
+                # The account may have been deleted since the event was sent, and its
+                # subscriptions went with it. The event stays recorded so the provider stops
+                # retrying, but there is no row to attach it to.
+                if not await writes.user_exists(snapshot.user_id):
+                    return "ignored"
                 await writes.insert(snapshot.user_id, snapshot)
             else:
                 # Without the app's user id there is no row to attach the subscription to.
@@ -299,6 +314,10 @@ class _PostgresWrites:
             ),
         )
 
+    async def user_exists(self, user_id: str) -> bool:
+        cursor = await self._db.execute("select 1 from users where id = %s::uuid", (user_id,))
+        return await cursor.fetchone() is not None
+
 
 class PostgresSubscriptions:
     """The subscriptions and payment_events tables, which packages/payments's migrations create.
@@ -327,7 +346,13 @@ class PostgresSubscriptions:
             yield _PostgresWrites(db)
 
 
-async def has_active_subscription(profile_id: str) -> bool:
-    """Whether the user, by their users row id, has a subscription that grants the paid features.
-    It reads only the database, so it holds even while the payment provider is not configured."""
-    return is_entitled(await PostgresSubscriptions(get_settings().database_url).find(profile_id))
+async def has_live_subscription(profile_id: str) -> bool:
+    """Whether the user, by their users row id, has any subscription still live with a provider
+    (LIVE_STATUSES). It reads only the database, so it holds even while the payment provider is
+    not configured."""
+    async with await _connect(get_settings().database_url) as db:
+        cursor = await db.execute(
+            "select 1 from subscriptions where user_id = %s::uuid and status = any(%s) limit 1",
+            (profile_id, sorted(LIVE_STATUSES)),
+        )
+        return await cursor.fetchone() is not None

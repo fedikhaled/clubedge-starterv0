@@ -237,7 +237,7 @@ def events(monkeypatch: pytest.MonkeyPatch) -> list[str]:
     async def unsubscribed(profile_id: str) -> bool:
         return False
 
-    monkeypatch.setattr("clubedge_api.account.has_active_subscription", unsubscribed)
+    monkeypatch.setattr("clubedge_api.account.has_live_subscription", unsubscribed)
     # clubedge:end
     return log
 
@@ -249,7 +249,7 @@ def test_keeps_the_display_name_in_the_users_row(events: list[str]) -> None:
 
 
 # clubedge:if payments=stripe
-def test_keeps_an_account_with_an_active_subscription(
+def test_keeps_an_account_with_a_live_subscription(
     events: list[str], monkeypatch: pytest.MonkeyPatch
 ) -> None:
     checked: list[str] = []
@@ -258,7 +258,7 @@ def test_keeps_an_account_with_an_active_subscription(
         checked.append(profile_id)
         return True
 
-    monkeypatch.setattr("clubedge_api.account.has_active_subscription", subscribed)
+    monkeypatch.setattr("clubedge_api.account.has_live_subscription", subscribed)
     assert asyncio.run(AccountSettings().delete_account(USER, "pw")) == "active-subscription"
     assert checked == ["profile-of-user-1"]
     assert events == []

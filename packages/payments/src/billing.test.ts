@@ -1,10 +1,17 @@
 import { PGlite } from "@electric-sql/pglite";
 import { drizzle } from "drizzle-orm/pglite";
 import { migrate } from "drizzle-orm/pglite/migrator";
+import { eq } from "drizzle-orm";
 import { fileURLToPath } from "node:url";
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { users, type Database } from "@clubedge/db";
-import { createBilling, findSubscription, isEntitled, NoBillingAccountError } from "./billing";
+import {
+  createBilling,
+  findSubscription,
+  hasLiveSubscription,
+  isEntitled,
+  NoBillingAccountError,
+} from "./billing";
 import { subscriptions } from "./schema";
 import type { PaymentEvent, PaymentProvider, SubscriptionSnapshot } from "./types";
 
@@ -128,6 +135,41 @@ describe("createBilling", () => {
     });
     expect(await billing.handleWebhook(request)).toBe("ignored");
     expect(await db.select().from(subscriptions)).toHaveLength(0);
+  });
+
+  it("records an event that arrives after its account was deleted", async () => {
+    const { provider, send } = fakeProvider();
+    const billing = createBilling({ db, provider });
+    send({ id: "evt_5", type: "subscription.updated", subscription: snapshot(userId) });
+    expect(await billing.handleWebhook(request)).toBe("applied");
+    await db.delete(users).where(eq(users.id, userId));
+
+    send({
+      id: "evt_6",
+      type: "subscription.updated",
+      subscription: snapshot(userId, { subscriptionId: "sub_2", status: "canceled" }),
+    });
+    expect(await billing.handleWebhook(request)).toBe("ignored");
+    // Recorded, so the provider's retry is a duplicate rather than another failure.
+    expect(await billing.handleWebhook(request)).toBe("duplicate");
+    expect(await db.select().from(subscriptions)).toHaveLength(0);
+  });
+
+  it("counts a past_due subscription as live, and only ended ones as not", async () => {
+    const row = (subscriptionId: string, status: string) => ({
+      userId,
+      provider: "fake",
+      providerCustomerId: `cus_${subscriptionId}`,
+      providerSubscriptionId: subscriptionId,
+      planId: "pro",
+      status,
+    });
+    await db.insert(subscriptions).values(row("sub_a", "canceled"));
+    expect(await hasLiveSubscription(db, userId)).toBe(false);
+    await db.insert(subscriptions).values(row("sub_b", "past_due"));
+    expect(await hasLiveSubscription(db, userId)).toBe(true);
+    await db.delete(subscriptions).where(eq(subscriptions.userId, userId));
+    expect(await hasLiveSubscription(db, userId)).toBe(false);
   });
 
   it("reuses the customer for a new checkout and opens the portal only for customers", async () => {

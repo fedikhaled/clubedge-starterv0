@@ -9,7 +9,7 @@ import { getAuth, getCurrentUser } from "@/server/auth";
 import { createRateLimiter } from "@/server/cache";
 import { getDb } from "@/server/db";
 // clubedge:if payments!=none
-import { findSubscription, isEntitled } from "@/server/payments";
+import { hasLiveSubscription } from "@/server/payments";
 // clubedge:end
 import { getUserProfileId } from "@/server/users";
 
@@ -78,10 +78,12 @@ export async function deleteAccount(formData: FormData) {
   if (!parsed.success) redirect(settingsUrl({ error: "invalid-input" }));
 
   // clubedge:if payments!=none
-  // A deleted account cannot manage its billing, so an active subscription is cancelled first.
-  // The subscription is read from the database, so this holds even without the Stripe keys.
-  const subscription = await findSubscription(getDb(), await getUserProfileId(user));
-  if (isEntitled(subscription)) redirect(settingsUrl({ error: "active-subscription" }));
+  // A deleted account cannot manage its billing, and the provider would keep charging it, so
+  // deletion waits until every subscription has ended. A past_due one is live even though it
+  // does not grant access; the rows are read from the database, so this holds without keys.
+  if (await hasLiveSubscription(getDb(), await getUserProfileId(user))) {
+    redirect(settingsUrl({ error: "active-subscription" }));
+  }
   // clubedge:end
   const result = await (
     await getAuth()
