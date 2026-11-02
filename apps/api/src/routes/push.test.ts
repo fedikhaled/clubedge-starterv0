@@ -95,6 +95,17 @@ describe("/api/push/devices", () => {
     expect((await app.request("/api/push/devices", post(android))).status).toBe(204);
   });
 
+  it("limits how often a user registers a device", async () => {
+    const app = appWith(memoryPush().push, () => createMemoryLimiter(1, 30));
+    expect((await app.request("/api/push/devices", post(device))).status).toBe(204);
+    const limited = await app.request(
+      "/api/push/devices",
+      post({ ...device, token: "ExponentPushToken[ada-tablet]" }),
+    );
+    expect(limited.status).toBe(429);
+    expect(Number(limited.headers.get("retry-after"))).toBeGreaterThan(0);
+  });
+
   it("takes only JSON", async () => {
     const response = await appWith(memoryPush().push).request("/api/push/devices", {
       method: "POST",

@@ -1,6 +1,9 @@
 // Push notifications' endpoints: the mobile apps save their device's push token for the
 // signed-in user, forget it when they sign out, and ask for a test notification. Sending
 // itself happens from the server's own code, through the PushNotifications service below.
+// A token is a bearer capability: it names one device to its push service, so removal needs no
+// session, letting a signed-out app forget it. Knowing a token stops that device's notifications
+// (and can move it to the knower's account); it reads nothing.
 import { Hono, type Context, type MiddlewareHandler } from "hono";
 import { z } from "zod";
 import type { components, User } from "@clubedge/contract";
@@ -61,6 +64,9 @@ const serviceNames: Record<PushService, string> = {
 export function pushRoutes(dependencies: ApiDependencies) {
   // Test notifications, per user: each one reaches every device the user has.
   const limiter = (dependencies.createRateLimiter ?? createMemoryLimiter)(5, 60);
+  // Registrations, per user: the app resends its token at each start, so this allows retries and
+  // bounds the rest; the number of devices an account keeps is capped separately.
+  const registrationLimiter = (dependencies.createRateLimiter ?? createMemoryLimiter)(10, 60);
   const notConfigured = "Push notifications are not set up on this server.";
 
   const signedIn: MiddlewareHandler<Env> = async (c, next) => {
@@ -93,7 +99,25 @@ export function pushRoutes(dependencies: ApiDependencies) {
           `This server sends notifications through ${names}.`,
         );
       }
-      await push.register(c.get("user"), parsed.data);
+      const user = c.get("user");
+      let limit;
+      try {
+        limit = await registrationLimiter.limit(`push-register:${user.id}`);
+      } catch (error) {
+        reportError(error, { message: "Rate limiter unavailable" });
+        return apiError(c, 503, "unavailable", "Saving the device is unavailable right now.");
+      }
+      if (!limit.success) {
+        const seconds = Math.max(1, Math.ceil((limit.resetAt - Date.now()) / 1_000));
+        c.header("Retry-After", String(seconds));
+        return apiError(
+          c,
+          429,
+          "rate_limited",
+          "Too many devices were registered. Try again later.",
+        );
+      }
+      await push.register(user, parsed.data);
       return c.body(null, 204);
     })
     .post("/api/push/devices/remove", jsonOnly, limitBody(MAX_BODY), async (c) => {
