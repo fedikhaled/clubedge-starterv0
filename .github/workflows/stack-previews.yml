@@ -18,6 +18,10 @@ jobs:
       github.event.pull_request.head.repo.full_name == github.repository
     name: React + Vite + ${{ matrix.api }}
     runs-on: ubuntu-24.04
+    # The pull request's own copy of this workflow would otherwise run with the Neon, Supabase,
+    # Render, and repository-write credentials. The environment's protection rules require a
+    # reviewer before any of them is read; SETUP.md, "Preview environments".
+    environment: stack-previews
     permissions:
       contents: write
     strategy:
@@ -35,7 +39,7 @@ jobs:
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       - id: branch
-        uses: neondatabase/create-branch-action@v6
+        uses: neondatabase/create-branch-action@72ed4f69a12b6be9c16aebfad893f6a21e9aba8b # v6.4.0
         with:
           project_id: ${{ vars.NEON_PROJECT_ID }}
           branch_name: ${{ env.NEON_BRANCH }}
@@ -147,6 +151,8 @@ jobs:
       github.event.pull_request.user.login != 'dependabot[bot]' &&
       github.event.pull_request.head.repo.full_name == github.repository
     runs-on: ubuntu-24.04
+    # The same credentials and repository-write token as the deploy job, so the same environment.
+    environment: stack-previews
     permissions:
       contents: write
     strategy:
@@ -175,7 +181,7 @@ jobs:
           API_KIND: ${{ matrix.api }}
           PR_NUMBER: ${{ github.event.number }}
         run: git push origin --delete "stack-preview/pr-${PR_NUMBER}-${API_KIND}"
-      - uses: neondatabase/delete-branch-action@v3
+      - uses: neondatabase/delete-branch-action@4468d825d5a88ef4012f1705a82f02ec3072f776 # v3.2.1
         continue-on-error: true
         with:
           project_id: ${{ vars.NEON_PROJECT_ID }}

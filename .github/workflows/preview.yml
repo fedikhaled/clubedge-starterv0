@@ -21,6 +21,10 @@ env:
   # clubedge:end
 jobs:
   preview:
+    # A pull request runs its own copy of this workflow, so a branch in this repository could read
+    # the Neon, Vercel, and Railway credentials. They reach the job only through an environment
+    # whose protection rules require reviewers; SETUP.md, "Preview environments".
+    environment: preview
     # Forks and Dependabot PRs get no secrets, so they cannot provision a database preview.
     if: >-
       github.event.action != 'closed' && vars.NEON_PROJECT_ID != '' &&
@@ -42,7 +46,7 @@ jobs:
       - run: pnpm install --frozen-lockfile
       # Reuses the branch on later pushes, so the preview keeps its data.
       - id: branch
-        uses: neondatabase/create-branch-action@v6
+        uses: neondatabase/create-branch-action@72ed4f69a12b6be9c16aebfad893f6a21e9aba8b # v6.4.0
         with:
           project_id: ${{ vars.NEON_PROJECT_ID }}
           branch_name: ${{ env.NEON_BRANCH }}
@@ -53,7 +57,7 @@ jobs:
           DATABASE_URL: ${{ steps.branch.outputs.db_url_pooled }}
           DATABASE_URL_DIRECT: ${{ steps.branch.outputs.db_url }}
       # Comments the difference between the branch's schema and its parent's.
-      - uses: neondatabase/schema-diff-action@v1
+      - uses: neondatabase/schema-diff-action@80cfa8521628e890015b60f5291a7738926617dc # v1.0.1
         with:
           project_id: ${{ vars.NEON_PROJECT_ID }}
           compare_branch: ${{ env.NEON_BRANCH }}
@@ -106,14 +110,14 @@ jobs:
           DATABASE_URL_DIRECT: ${{ steps.branch.outputs.db_url }}
         run: |
           set -euo pipefail
-          npx --yes vercel@latest pull --yes --environment=preview --token="$VERCEL_TOKEN"
+          npx --yes vercel@65.9.0 pull --yes --environment=preview --token="$VERCEL_TOKEN"
           # The build (check:env, migrations, next build) reads the pulled variables.
           file=.vercel/.env.preview.local
           grep -v -E '^(DATABASE_URL|DATABASE_URL_DIRECT)=' "$file" > "$file.next" || true
           printf 'DATABASE_URL="%s"\nDATABASE_URL_DIRECT="%s"\n' "$DATABASE_URL" "$DATABASE_URL_DIRECT" >> "$file.next"
           mv "$file.next" "$file"
-          npx --yes vercel@latest build --token="$VERCEL_TOKEN"
-          url=$(npx --yes vercel@latest deploy --prebuilt --token="$VERCEL_TOKEN" \
+          npx --yes vercel@65.9.0 build --token="$VERCEL_TOKEN"
+          url=$(npx --yes vercel@65.9.0 deploy --prebuilt --token="$VERCEL_TOKEN" \
             --env DATABASE_URL="$DATABASE_URL" --env DATABASE_URL_DIRECT="$DATABASE_URL_DIRECT")
           echo "url=$url" >> "$GITHUB_OUTPUT"
       # clubedge:end
@@ -132,7 +136,7 @@ jobs:
           DATABASE_URL_DIRECT: ${{ steps.branch.outputs.db_url }}
         run: |
           set -euo pipefail
-          railway() { npx --yes @railway/cli@5 "$@"; }
+          railway() { npx --yes @railway/cli@5.71.0 "$@"; }
           railway environment new "$RAILWAY_ENVIRONMENT" --duplicate production --json || true
           # The image listens on PORT, and the domain below sends traffic to it: set it here
           # rather than rely on production having it, since Railway otherwise assigns its own.
@@ -188,13 +192,15 @@ jobs:
           fi
 
   cleanup:
+    # The same credentials as the preview, so the same environment.
+    environment: preview
     if: >-
       github.event.action == 'closed' && vars.NEON_PROJECT_ID != '' &&
       github.event.pull_request.user.login != 'dependabot[bot]' &&
       github.event.pull_request.head.repo.full_name == github.repository
     runs-on: ubuntu-24.04
     steps:
-      - uses: neondatabase/delete-branch-action@v3
+      - uses: neondatabase/delete-branch-action@4468d825d5a88ef4012f1705a82f02ec3072f776 # v3.2.1
         # A pull request closed before its preview was made has no branch.
         continue-on-error: true
         with:
@@ -209,5 +215,5 @@ jobs:
           RAILWAY_PROJECT_ID: ${{ vars.RAILWAY_PROJECT_ID }}
           RAILWAY_SERVICE: ${{ vars.RAILWAY_SERVICE }}
         run: |
-          npx --yes @railway/cli@5 environment delete "$RAILWAY_ENVIRONMENT" --yes
+          npx --yes @railway/cli@5.71.0 environment delete "$RAILWAY_ENVIRONMENT" --yes
       # clubedge:end

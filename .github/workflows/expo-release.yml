@@ -62,4 +62,4 @@ jobs:
           set -euo pipefail
           args=(build --platform "$PLATFORM" --profile "$PROFILE" --non-interactive --no-wait)
           if [ "$SUBMIT" = true ]; then args+=(--auto-submit); fi
-          pnpm dlx eas-cli@latest "${args[@]}"
+          pnpm dlx eas-cli@27.2.0 "${args[@]}"

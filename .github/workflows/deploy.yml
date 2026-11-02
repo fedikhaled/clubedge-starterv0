@@ -13,7 +13,11 @@ jobs:
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v7
-      - uses: superfly/flyctl-actions/setup-flyctl@master
+      # 1.6, by commit, and flyctl by version: a moved tag or a new release cannot change what
+      # runs with the deploy token.
+      - uses: superfly/flyctl-actions/setup-flyctl@ed8efb33836e8b2096c7fd3ba1c8afe303ebbff1
+        with:
+          version: 0.5.6
       # Builds on Fly's builders and runs the release command (migrations) before switching.
       - run: flyctl deploy --remote-only
         env:
@@ -26,7 +30,7 @@ jobs:
       - uses: actions/checkout@v7
       # Uploads this checkout; Railway builds the image and runs the pre-deploy migrations set by
       # .railway/railway.ts (applied with `pnpm clubedge deploy` or `railway config apply`).
-      - run: npx --yes @railway/cli@5 up --ci --service "$RAILWAY_SERVICE"
+      - run: npx --yes @railway/cli@5.71.0 up --ci --service "$RAILWAY_SERVICE"
         env:
           RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
           RAILWAY_SERVICE: ${{ vars.RAILWAY_SERVICE }}
@@ -56,9 +60,9 @@ jobs:
           cache: pnpm
       # Builds here with the project's production settings and variables (including the
       # migrations in its build command), then uploads the result.
-      - run: npx --yes vercel@latest pull --yes --environment=production --token="$VERCEL_TOKEN"
-      - run: npx --yes vercel@latest build --prod --token="$VERCEL_TOKEN"
-      - run: npx --yes vercel@latest deploy --prebuilt --prod --token="$VERCEL_TOKEN"
+      - run: npx --yes vercel@65.9.0 pull --yes --environment=production --token="$VERCEL_TOKEN"
+      - run: npx --yes vercel@65.9.0 build --prod --token="$VERCEL_TOKEN"
+      - run: npx --yes vercel@65.9.0 deploy --prebuilt --prod --token="$VERCEL_TOKEN"
   # clubedge:end
   # clubedge:if deploy=netlify
   netlify:
@@ -75,6 +79,6 @@ jobs:
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       # Builds with netlify.toml (including its migrations) and the site's variables, then deploys.
-      - run: npx --yes netlify-cli@latest deploy --build --prod
+      - run: npx --yes netlify-cli@27.16.2 deploy --build --prod
         working-directory: apps/web
   # clubedge:end
