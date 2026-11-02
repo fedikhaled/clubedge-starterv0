@@ -1,7 +1,9 @@
 export {
   createBilling,
   findSubscription,
+  hasLiveSubscription,
   isEntitled,
+  LIVE_STATUSES,
   NoBillingAccountError,
   type Billing,
   type WebhookResult,

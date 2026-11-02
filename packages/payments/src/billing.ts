@@ -1,5 +1,5 @@
-import { and, desc, eq } from "drizzle-orm";
-import type { Database } from "@clubedge/db";
+import { and, desc, eq, inArray } from "drizzle-orm";
+import { users, type Database } from "@clubedge/db";
 import { paymentEvents, subscriptions, type Subscription } from "./schema";
 import { ENTITLED_STATUSES, type PaymentProvider, type SubscriptionStatus } from "./types";
 
@@ -14,6 +14,30 @@ export function isEntitled(subscription: Pick<Subscription, "status"> | null): b
   return Boolean(
     subscription && ENTITLED_STATUSES.includes(subscription.status as SubscriptionStatus),
   );
+}
+
+/**
+ * Statuses in which the provider still holds the subscription, so it can charge, retry, or
+ * resume. `past_due` does not grant access but is still collecting; `unpaid`, `paused`, and
+ * `incomplete` can still become active. `canceled` and `incomplete_expired` are over.
+ */
+export const LIVE_STATUSES: readonly SubscriptionStatus[] = [
+  "active",
+  "trialing",
+  "past_due",
+  "unpaid",
+  "paused",
+  "incomplete",
+];
+
+/** Whether the user has any subscription that is still live with a provider. */
+export async function hasLiveSubscription(db: Database, userId: string): Promise<boolean> {
+  const [row] = await db
+    .select({ id: subscriptions.id })
+    .from(subscriptions)
+    .where(and(eq(subscriptions.userId, userId), inArray(subscriptions.status, [...LIVE_STATUSES])))
+    .limit(1);
+  return Boolean(row);
 }
 
 /**
@@ -112,6 +136,15 @@ export function createBilling({ db, provider }: { db: Database; provider: Paymen
         if (existing) {
           await tx.update(subscriptions).set(values).where(eq(subscriptions.id, existing.id));
         } else if (snapshot.userId) {
+          // The account may have been deleted since the event was sent, and its subscriptions
+          // went with it. The event stays recorded so the provider stops retrying, but there is
+          // no row to attach it to.
+          const [user] = await tx
+            .select({ id: users.id })
+            .from(users)
+            .where(eq(users.id, snapshot.userId))
+            .limit(1);
+          if (!user) return "ignored";
           await tx.insert(subscriptions).values({
             ...values,
             userId: snapshot.userId,
