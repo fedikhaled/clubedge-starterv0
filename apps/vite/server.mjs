@@ -58,6 +58,15 @@ const mimeTypes = {
   ".woff": "font/woff",
   ".woff2": "font/woff2",
 };
+// The same headers apps/web sends (next.config.ts) and apps/start sends (src/start.ts); this
+// server replaces Next for the Vite stack, so pages and API answers keep them.
+const securityHeaders = {
+  "x-content-type-options": "nosniff",
+  "x-frame-options": "DENY",
+  "referrer-policy": "strict-origin-when-cross-origin",
+  "permissions-policy": "camera=(), microphone=(), geolocation=()",
+  "strict-transport-security": "max-age=63072000; includeSubDomains; preload",
+};
 const hopByHopHeaders = new Set([
   "connection",
   "keep-alive",
@@ -309,6 +318,9 @@ function allowMobileOrigins(request, response) {
 }
 
 const server = createServer(async (request, response) => {
+  // Every answer gets them, including proxied API responses: the browser sees this origin, not
+  // the API's. A handler that sets one of its own wins.
+  editHeaders(response, (headers) => ({ ...securityHeaders, ...headers }));
   const isApiRequest = request.url === "/api" || request.url?.startsWith("/api/");
   if (isApiRequest && allowMobileOrigins(request, response)) return;
   if (!isApiRequest && request.method !== "GET" && request.method !== "HEAD") {

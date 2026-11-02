@@ -45,7 +45,7 @@ export interface paths {
       path?: never;
       cookie?: never;
     };
-    /** The signed-in user, or null. */
+    /** The signed-in user, or null. Never cached. */
     get: operations["getSession"];
     put?: never;
     post?: never;
@@ -642,6 +642,8 @@ export interface operations {
       /** @description The current session. */
       200: {
         headers: {
+          /** @description no-store, so one browser's answer is never served to another. */
+          "Cache-Control"?: string;
           [name: string]: unknown;
         };
         content: {

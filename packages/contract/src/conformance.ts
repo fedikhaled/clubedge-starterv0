@@ -167,11 +167,12 @@ export function describeApiConformance(
       expect(response.headers.get("cache-control") ?? "").toContain("no-store");
     });
 
-    it("returns the session, with no user when signed out", async () => {
+    it("returns the session, with no user when signed out, never cached", async () => {
       const harness = await setup();
       const response = await harness.request("/api/session");
       expect(response.status).toBe(200);
       expect(await json(response)).toEqual({ user: null });
+      expect(response.headers.get("cache-control") ?? "").toContain("no-store");
     });
 
     // Apps installed on phones ask it before anything else, so every API has it, whatever its
