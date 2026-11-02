@@ -13,7 +13,8 @@ jobs:
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v7
-      - uses: superfly/flyctl-actions/setup-flyctl@master
+      # v1.4, by commit: a moved tag or branch cannot change what runs with the deploy token.
+      - uses: superfly/flyctl-actions/setup-flyctl@dfdfedc86b296f5e5384f755a18bf400409a15d0
       # Builds on Fly's builders and runs the release command (migrations) before switching.
       - run: flyctl deploy --remote-only
         env:
@@ -56,9 +57,9 @@ jobs:
           cache: pnpm
       # Builds here with the project's production settings and variables (including the
       # migrations in its build command), then uploads the result.
-      - run: npx --yes vercel@latest pull --yes --environment=production --token="$VERCEL_TOKEN"
-      - run: npx --yes vercel@latest build --prod --token="$VERCEL_TOKEN"
-      - run: npx --yes vercel@latest deploy --prebuilt --prod --token="$VERCEL_TOKEN"
+      - run: npx --yes vercel@65.9.0 pull --yes --environment=production --token="$VERCEL_TOKEN"
+      - run: npx --yes vercel@65.9.0 build --prod --token="$VERCEL_TOKEN"
+      - run: npx --yes vercel@65.9.0 deploy --prebuilt --prod --token="$VERCEL_TOKEN"
   # clubedge:end
   # clubedge:if deploy=netlify
   netlify:
@@ -75,6 +76,6 @@ jobs:
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       # Builds with netlify.toml (including its migrations) and the site's variables, then deploys.
-      - run: npx --yes netlify-cli@latest deploy --build --prod
+      - run: npx --yes netlify-cli@27.16.2 deploy --build --prod
         working-directory: apps/web
   # clubedge:end

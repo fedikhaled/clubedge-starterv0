@@ -18,6 +18,10 @@ jobs:
       github.event.pull_request.head.repo.full_name == github.repository
     name: React + Vite + ${{ matrix.api }}
     runs-on: ubuntu-24.04
+    # The pull request's own copy of this workflow would otherwise run with the Neon, Supabase,
+    # Render, and repository-write credentials. The environment's protection rules require a
+    # reviewer before any of them is read; SETUP.md, "Preview environments".
+    environment: stack-previews
     permissions:
       contents: write
     strategy:

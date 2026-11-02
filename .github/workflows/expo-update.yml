@@ -52,5 +52,5 @@ jobs:
           CHANNEL: ${{ inputs.channel }}
           MESSAGE: ${{ inputs.message }}
         run: |
-          pnpm dlx eas-cli@latest update --channel "$CHANNEL" --environment "$CHANNEL" \
+          pnpm dlx eas-cli@27.2.0 update --channel "$CHANNEL" --environment "$CHANNEL" \
             --message "$MESSAGE" --non-interactive

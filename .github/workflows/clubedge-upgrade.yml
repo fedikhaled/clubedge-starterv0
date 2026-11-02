@@ -72,7 +72,9 @@ jobs:
           fi
           # The newest CLI upgrades to the Starter release it is pinned to. With
           # --detailed-exit-code it exits with 2 when the upgrade left conflicts to resolve, which
-          # the pull request lists; any other failure stops here.
+          # the pull request lists; any other failure stops here. @latest is deliberate: pinning
+          # the CLI would pin the release it upgrades to. It runs with this project's own token,
+          # limited to contents, pull requests, and actions, not a shared organization credential.
           status=0
           pnpm dlx @clubedge/create-clubedge-app@latest upgrade --no-install --detailed-exit-code 2>&1 | tee "$RUNNER_TEMP/upgrade.log" || status=$?
           if [ "$status" -ne 0 ] && [ "$status" -ne 2 ]; then

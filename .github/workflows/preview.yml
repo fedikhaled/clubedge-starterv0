@@ -21,6 +21,10 @@ env:
   # clubedge:end
 jobs:
   preview:
+    # A pull request runs its own copy of this workflow, so a branch in this repository could read
+    # the Neon, Vercel, and Railway credentials. They reach the job only through an environment
+    # whose protection rules require reviewers; SETUP.md, "Preview environments".
+    environment: preview
     # Forks and Dependabot PRs get no secrets, so they cannot provision a database preview.
     if: >-
       github.event.action != 'closed' && vars.NEON_PROJECT_ID != '' &&
@@ -106,14 +110,14 @@ jobs:
           DATABASE_URL_DIRECT: ${{ steps.branch.outputs.db_url }}
         run: |
           set -euo pipefail
-          npx --yes vercel@latest pull --yes --environment=preview --token="$VERCEL_TOKEN"
+          npx --yes vercel@65.9.0 pull --yes --environment=preview --token="$VERCEL_TOKEN"
           # The build (check:env, migrations, next build) reads the pulled variables.
           file=.vercel/.env.preview.local
           grep -v -E '^(DATABASE_URL|DATABASE_URL_DIRECT)=' "$file" > "$file.next" || true
           printf 'DATABASE_URL="%s"\nDATABASE_URL_DIRECT="%s"\n' "$DATABASE_URL" "$DATABASE_URL_DIRECT" >> "$file.next"
           mv "$file.next" "$file"
-          npx --yes vercel@latest build --token="$VERCEL_TOKEN"
-          url=$(npx --yes vercel@latest deploy --prebuilt --token="$VERCEL_TOKEN" \
+          npx --yes vercel@65.9.0 build --token="$VERCEL_TOKEN"
+          url=$(npx --yes vercel@65.9.0 deploy --prebuilt --token="$VERCEL_TOKEN" \
             --env DATABASE_URL="$DATABASE_URL" --env DATABASE_URL_DIRECT="$DATABASE_URL_DIRECT")
           echo "url=$url" >> "$GITHUB_OUTPUT"
       # clubedge:end

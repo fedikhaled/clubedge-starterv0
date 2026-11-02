@@ -47,7 +47,16 @@ jobs:
       - name: Lint the release workflows
         run: |
           set -euo pipefail
-          bash <(curl --fail --silent --show-error https://raw.githubusercontent.com/rhysd/actionlint/v1.7.7/scripts/download-actionlint.bash) 1.7.7 "$RUNNER_TEMP"
+          # Downloaded from a pinned release and checked against its published SHA-256, so a
+          # changed tag or installer script cannot run here.
+          version=1.7.7
+          archive="$RUNNER_TEMP/actionlint_${version}_linux_amd64.tar.gz"
+          curl --fail --silent --show-error --location --output "$archive" \
+            "https://github.com/rhysd/actionlint/releases/download/v${version}/actionlint_${version}_linux_amd64.tar.gz"
+          echo "023070a287cd8cccd71515fedc843f1985bf96c436b7effaecce67290e7e0757  $archive" \
+            | sha256sum --check --status \
+            || { echo "actionlint's checksum does not match; not running it."; exit 1; }
+          tar --extract --gzip --file "$archive" --directory "$RUNNER_TEMP" actionlint
           # The workflows themselves, without their scripts' shellcheck findings.
           "$RUNNER_TEMP/actionlint" -shellcheck= -pyflakes= .github/workflows/shell-release.yml \
             .github/workflows/expo-release.yml .github/workflows/expo-update.yml
@@ -58,6 +67,9 @@ jobs:
   appwrite:
     runs-on: ubuntu-24.04
     timeout-minutes: 15
+    # A pull request runs its own copy of this workflow, so the Appwrite key reaches it only
+    # through an environment whose protection rules require reviewers.
+    environment: appwrite-cloud
     # Every run signs up users in the one Appwrite Cloud test project and deletes them at the end:
     # one run at a time, across branches, so their users never mix. A newer run waits.
     concurrency:
@@ -360,7 +372,14 @@ jobs:
             test ! -e .github/workflows/deploy.yml
             exit 0
           fi
-          bash <(curl --fail --silent --show-error https://raw.githubusercontent.com/rhysd/actionlint/v1.7.7/scripts/download-actionlint.bash) 1.7.7 "$RUNNER_TEMP"
+          version=1.7.7
+          archive="$RUNNER_TEMP/actionlint_${version}_linux_amd64.tar.gz"
+          curl --fail --silent --show-error --location --output "$archive" \
+            "https://github.com/rhysd/actionlint/releases/download/v${version}/actionlint_${version}_linux_amd64.tar.gz"
+          echo "023070a287cd8cccd71515fedc843f1985bf96c436b7effaecce67290e7e0757  $archive" \
+            | sha256sum --check --status \
+            || { echo "actionlint's checksum does not match; not running it."; exit 1; }
+          tar --extract --gzip --file "$archive" --directory "$RUNNER_TEMP" actionlint
           "$RUNNER_TEMP/actionlint" .github/workflows/deploy.yml
           ! grep -n "clubedge:" .github/workflows/deploy.yml
           # Exactly one job: the selected platform's.
@@ -1221,7 +1240,7 @@ jobs:
         if: contains(matrix.modules, '--jobs inngest')
         run: |
           set -euo pipefail
-          nohup npx --yes --ignore-scripts=false inngest-cli@latest dev \
+          nohup npx --yes --ignore-scripts=false inngest-cli@1.49.0 dev \
             > "$RUNNER_TEMP/inngest.log" 2>&1 &
           timeout 180 bash -c 'until curl --silent --fail --output /dev/null http://127.0.0.1:8288/; do sleep 2; done' \
             || { cat "$RUNNER_TEMP/inngest.log"; exit 1; }
