@@ -5,7 +5,32 @@ import { drizzle } from "drizzle-orm/postgres-js";
 import { sql } from "drizzle-orm";
 import { drizzleAdapter } from "better-auth/adapters/drizzle";
 import { betterAuth } from "better-auth/minimal";
+import { bearer } from "better-auth/plugins"; // clubedge:only shell!=none
+import { expo } from "@better-auth/expo"; // clubedge:only mobile!=none
 import { boolean, pgTable, text, timestamp, uuid } from "drizzle-orm/pg-core";
+import { passwordResetEmail, verificationEmail } from "@clubedge/auth";
+// clubedge:if email=smtp|resend
+import { createConsoleEmail } from "@clubedge/email";
+// clubedge:end
+// clubedge:if email=smtp
+import { createSmtpEmail } from "@clubedge/email-smtp";
+// clubedge:end
+// clubedge:if email=resend
+import { createResendEmail } from "@clubedge/email-resend";
+// clubedge:end
+import { clientIp } from "./client-ip.mjs";
+import site from "./src/config/site.json" with { type: "json" };
+
+// clubedge:if mobile!=none
+// The native app's address scheme, such as my-product://, which its sign-in requests carry: made
+// from the site config the way the app's app.config.ts makes it, so the two stay in step.
+const scheme =
+  site.serviceId
+    .toLowerCase()
+    .replace(/[^a-z0-9+.-]/g, "")
+    .replace(/^[^a-z]+/, "") || "app";
+const appScheme = `${scheme}://`;
+// clubedge:end
 
 const id = () =>
   uuid("id")
@@ -74,22 +99,67 @@ class RequestBodyTooLargeError extends Error {
   }
 }
 
-async function sendEmail({ to, subject, text, html }) {
-  const apiKey = process.env.RESEND_API_KEY;
-  const from = process.env.EMAIL_FROM;
-  if (!apiKey || !from) {
-    throw new Error("Configure RESEND_API_KEY and EMAIL_FROM to send auth emails.");
-  }
+// clubedge:if email=none
+// Without the email module, auth emails go through Resend's API when RESEND_API_KEY and
+// EMAIL_FROM are both set; otherwise verification and password reset are off.
+async function sendWithResend({ to, subject, text, html }) {
   const response = await fetch("https://api.resend.com/emails", {
     method: "POST",
     headers: {
-      authorization: `Bearer ${apiKey}`,
+      authorization: `Bearer ${process.env.RESEND_API_KEY}`,
       "content-type": "application/json",
     },
-    body: JSON.stringify({ from, to: [to], subject, text, html }),
+    body: JSON.stringify({ from: process.env.EMAIL_FROM, to: [to], subject, text, html }),
     signal: AbortSignal.timeout(10_000),
   });
   if (!response.ok) throw new Error(`Auth email provider returned ${response.status}.`);
+}
+// clubedge:end
+
+// clubedge:if email=smtp|resend
+/** Refuses to send, for production without an email provider; `pnpm check:env` reports it. */
+function unconfigured(variable) {
+  return async () => {
+    throw new Error(`Email is not configured: set ${variable} to send email in production.`);
+  };
+}
+// clubedge:end
+
+/**
+ * How verification and password reset emails are sent: through the email module, or null to
+ * turn both features off. The first configured sender wins.
+ */
+function authEmailSender() {
+  const env = process.env;
+  // A list, so the code reads the same with and without each provider's block.
+  const senders = [];
+  // clubedge:if email=smtp|resend
+  const from = env.EMAIL_FROM || "App <no-reply@example.com>";
+  const production = env.NODE_ENV === "production";
+  // clubedge:end
+  // clubedge:if email=smtp
+  // Email over SMTP: any provider's SMTP endpoint, or a local inbox such as Mailpit.
+  if (env.SMTP_URL) {
+    const smtp = createSmtpEmail({ url: env.SMTP_URL, from });
+    senders.push((message) => smtp.send(message));
+  } else if (production) senders.push(unconfigured("SMTP_URL"));
+  // clubedge:end
+  // clubedge:if email=resend
+  // Email through Resend's API. EMAIL_FROM must use a domain verified in Resend.
+  if (env.RESEND_API_KEY) {
+    const resend = createResendEmail({ apiKey: env.RESEND_API_KEY, from });
+    senders.push((message) => resend.send(message));
+  } else if (production) senders.push(unconfigured("RESEND_API_KEY"));
+  // clubedge:end
+  // clubedge:if email=smtp|resend
+  // Without a provider, development prints emails to the server log.
+  const logged = createConsoleEmail();
+  senders.push((message) => logged.send(message));
+  // clubedge:end
+  // clubedge:if email=none
+  if (env.RESEND_API_KEY && env.EMAIL_FROM) senders.push(sendWithResend);
+  // clubedge:end
+  return senders[0] ?? null;
 }
 
 function getAuthServer() {
@@ -97,7 +167,8 @@ function getAuthServer() {
   const databaseUrl = process.env.DATABASE_URL;
   const secret = process.env.BETTER_AUTH_SECRET;
   if (!databaseUrl || !secret) return null;
-  const hasEmailProvider = Boolean(process.env.RESEND_API_KEY && process.env.EMAIL_FROM);
+  const sendEmail = authEmailSender();
+  const appName = site.name;
   const client = postgres(databaseUrl, {
     prepare: false,
     max: 1,
@@ -110,6 +181,26 @@ function getAuthServer() {
   });
   const baseURL =
     process.env.BETTER_AUTH_URL || process.env.FRONTEND_URL || "http://localhost:3000";
+  const trustedOrigins = [];
+  const plugins = [];
+  // clubedge:if shell!=none
+  // The mobile shell signs in from its own origins (MOBILE_ORIGINS, as server.mjs reads them),
+  // and its WebView keeps no cookie for this server: the bearer plugin answers with the session
+  // token in a header, and takes it back as a bearer token.
+  trustedOrigins.push(
+    ...(process.env.MOBILE_ORIGINS ?? "capacitor://localhost,https://localhost")
+      .split(",")
+      .map((origin) => origin.trim())
+      .filter(Boolean),
+  );
+  plugins.push(bearer());
+  // clubedge:end
+  // clubedge:if mobile!=none
+  // The native app signs in with its own scheme, which it sends as expo-origin, and keeps the
+  // session cookie on the device: the expo plugin takes expo-origin as the request's origin.
+  trustedOrigins.push(appScheme);
+  plugins.push(expo());
+  // clubedge:end
   authServer = betterAuth({
     database: drizzleAdapter(database, {
       provider: "pg",
@@ -122,44 +213,40 @@ function getAuthServer() {
       minPasswordLength: 8,
       maxPasswordLength: 128,
       requireEmailVerification:
-        hasEmailProvider && process.env.BETTER_AUTH_REQUIRE_EMAIL_VERIFICATION === "true",
-      ...(hasEmailProvider
+        Boolean(sendEmail) && process.env.BETTER_AUTH_REQUIRE_EMAIL_VERIFICATION === "true",
+      ...(sendEmail
         ? {
+            resetPasswordTokenExpiresIn: 60 * 60,
             sendResetPassword: async ({ user, token }) => {
               const url = new URL("/reset-password", baseURL);
               url.searchParams.set("token", token);
-              await sendEmail({
-                to: user.email,
-                subject: "Reset your password",
-                text: `Reset your password: ${url.toString()}`,
-                html: [
-                  "<p>Reset your password:</p>",
-                  `<p><a href="${url.toString()}">Choose a new password</a></p>`,
-                ].join(""),
-              });
+              await sendEmail(passwordResetEmail({ to: user.email, url: url.toString(), appName }));
             },
           }
         : {}),
-      ...(hasEmailProvider ? { resetPasswordTokenExpiresIn: 60 * 60 } : {}),
     },
-    ...(hasEmailProvider
+    ...(sendEmail
       ? {
           emailVerification: {
             sendOnSignUp: true,
             autoSignInAfterVerification: true,
             sendVerificationEmail: async ({ user, url }) =>
-              sendEmail({
-                to: user.email,
-                subject: "Confirm your email address",
-                text: `Confirm your email address: ${url}`,
-                html: `<p>Confirm your email address:</p><p><a href="${url}">Confirm email</a></p>`,
-              }),
+              sendEmail(verificationEmail({ to: user.email, url, appName })),
           },
         }
       : {}),
-    user: { deleteUser: { enabled: true } },
+    // The API deletes accounts (POST /api/account/delete), removing the app's data with them, so
+    // Better Auth's own delete-user endpoint stays off.
+    user: { deleteUser: { enabled: false } },
     advanced: { database: { generateId: "uuid" } },
-    rateLimit: { enabled: true },
+    rateLimit: {
+      enabled: true,
+      // The settings page's password changes: 10 a minute per address, as the API allows
+      // account deletions per user. The limits are kept in this process, so they cannot fail open.
+      customRules: { "/change-password": { window: 60, max: 10 } },
+    },
+    trustedOrigins,
+    plugins,
   });
   return authServer;
 }
@@ -175,6 +262,9 @@ async function toWebRequest(request) {
   for (const [name, value] of Object.entries(request.headers)) {
     if (value !== undefined) headers.set(name, Array.isArray(value) ? value.join(", ") : value);
   }
+  // Better Auth limits requests per client address, which it reads from this header: give it the
+  // address this server finds (client-ip.mjs), never a copy the client sent.
+  headers.set("x-forwarded-for", clientIp(request));
   const method = request.method ?? "GET";
   let body;
   if (method !== "GET" && method !== "HEAD") {

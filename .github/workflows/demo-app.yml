@@ -1,0 +1,379 @@
+# Maintainer workflow for the Starter repository: the demo apps for Android, built from each
+# release and attached to it. clubedge-demo.apk is the mobile app (Capacitor), which the website
+# links to through releases/latest/download/clubedge-demo.apk; it keeps sample data on the device
+# and needs no server. clubedge-native-demo.apk is the native app (Expo) of a project without a
+# website, which signs in for real against that project's API, deployed by each release to
+# Render's free plan. Generated projects never get this workflow.
+name: Demo app
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: The release to build the demo for and attach it to, such as v0.27.0
+        required: true
+permissions:
+  contents: write
+jobs:
+  android:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    env:
+      TAG: ${{ github.event.release.tag_name || inputs.tag }}
+      # The signing key, as a base64 PKCS12 keystore. Without it, the APK is debug-signed.
+      DEMO_KEYSTORE: ${{ secrets.DEMO_KEYSTORE }}
+      DEMO_KEYSTORE_PASSWORD: ${{ secrets.DEMO_KEYSTORE_PASSWORD }}
+      DEMO_KEY_ALIAS: ${{ secrets.DEMO_KEY_ALIAS }}
+      DEMO_KEY_PASSWORD: ${{ secrets.DEMO_KEY_PASSWORD }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ env.TAG }}
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: pnpm
+      # Capacitor 8 builds with Java 21; the runner has the Android SDK.
+      - uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: 21
+      - name: Build create-clubedge-app
+        run: |
+          set -euo pipefail
+          git clone --depth 1 --branch main https://github.com/Clubedge/create-clubedge-app.git "$RUNNER_TEMP/cli"
+          cd "$RUNNER_TEMP/cli"
+          pnpm install --frozen-lockfile
+          pnpm build
+      # The folder's name names the project, and so the app: Clubedge Demo. The demo shows the
+      # dashboard's jobs card, whose sample job runs on the device, and file storage in its module
+      # list; every other module is left out, or takes its lightest option.
+      - name: Generate the project
+        run: |
+          node "$RUNNER_TEMP/cli/bin/create.mjs" "$RUNNER_TEMP/clubedge-demo" --template-dir "$GITHUB_WORKSPACE" \
+            --framework vite --api hono --auth better-auth --shell capacitor --storage s3 \
+            --cache memory --email none --payments none --jobs pg-boss --observability none \
+            --infra none --no-git --no-install --yes
+      # The app's id becomes permanent with the Android project, which the build creates.
+      - name: Set the app's id
+        working-directory: ${{ runner.temp }}/clubedge-demo
+        run: |
+          set -euo pipefail
+          sed -i 's|^const appId = .*|const appId = "live.clubedge.demo";|' apps/shell/capacitor.config.ts
+          grep -q 'const appId = "live.clubedge.demo";' apps/shell/capacitor.config.ts
+          grep -q '"name": "Clubedge Demo"' apps/web/src/config/site.json
+      - name: Install
+        working-directory: ${{ runner.temp }}/clubedge-demo
+        run: pnpm install --frozen-lockfile
+      - name: Build the demo and number it after the release
+        working-directory: ${{ runner.temp }}/clubedge-demo
+        run: |
+          set -euo pipefail
+          pnpm --filter @clubedge/shell run sync android --demo
+          # The demo's icon is the Clubedge logo: the script fails if it can't make it.
+          pnpm --filter @clubedge/shell run icons android
+          version="${TAG#v}"
+          if ! [[ "$version" =~ ^([0-9]+)\.([0-9]+)\.([0-9]+)$ ]]; then
+            echo "The release tag $TAG is not vMAJOR.MINOR.PATCH."
+            exit 1
+          fi
+          code=$((BASH_REMATCH[1] * 10000 + BASH_REMATCH[2] * 100 + BASH_REMATCH[3]))
+          sed -i -E "s/versionCode [0-9]+/versionCode $code/; s/versionName \"[^\"]*\"/versionName \"$version\"/" \
+            apps/shell/android/app/build.gradle
+          grep -q "versionCode $code" apps/shell/android/app/build.gradle
+          grep -q "versionName \"$version\"" apps/shell/android/app/build.gradle
+          echo "VERSION=$version" >> "$GITHUB_ENV"
+      - name: Build the APK and sign it with the demo's key
+        if: env.DEMO_KEYSTORE != ''
+        working-directory: ${{ runner.temp }}/clubedge-demo/apps/shell/android
+        run: |
+          set -euo pipefail
+          if [ -z "$DEMO_KEYSTORE_PASSWORD" ] || [ -z "$DEMO_KEY_ALIAS" ] || [ -z "$DEMO_KEY_PASSWORD" ]; then
+            echo "DEMO_KEYSTORE needs DEMO_KEYSTORE_PASSWORD, DEMO_KEY_ALIAS, and DEMO_KEY_PASSWORD."
+            exit 1
+          fi
+          echo "$DEMO_KEYSTORE" | base64 --decode > "$RUNNER_TEMP/demo.p12"
+          trap 'rm -f "$RUNNER_TEMP/demo.p12"' EXIT
+          ./gradlew assembleRelease
+          tools="$ANDROID_HOME/build-tools/$(ls "$ANDROID_HOME/build-tools" | sort -V | tail -n 1)"
+          "$tools/zipalign" -p -f 4 app/build/outputs/apk/release/app-release-unsigned.apk "$RUNNER_TEMP/aligned.apk"
+          "$tools/apksigner" sign --ks "$RUNNER_TEMP/demo.p12" --ks-type PKCS12 \
+            --ks-pass env:DEMO_KEYSTORE_PASSWORD --ks-key-alias "$DEMO_KEY_ALIAS" \
+            --key-pass env:DEMO_KEY_PASSWORD --out "$RUNNER_TEMP/clubedge-demo.apk" "$RUNNER_TEMP/aligned.apk"
+          "$tools/apksigner" verify "$RUNNER_TEMP/clubedge-demo.apk"
+          echo "Clubedge Demo $VERSION, signed with the demo's key." >> "$GITHUB_STEP_SUMMARY"
+      - name: Build a debug-signed APK, without the demo's key
+        if: env.DEMO_KEYSTORE == ''
+        working-directory: ${{ runner.temp }}/clubedge-demo/apps/shell/android
+        run: |
+          set -euo pipefail
+          ./gradlew assembleDebug
+          cp app/build/outputs/apk/debug/app-debug.apk "$RUNNER_TEMP/clubedge-demo.apk"
+          {
+            echo "Clubedge Demo $VERSION is **debug-signed**: the repository has no DEMO_KEYSTORE secret."
+            echo "A later APK signed with another key cannot update it in place: uninstall it first."
+          } >> "$GITHUB_STEP_SUMMARY"
+      - name: Attach the APK to the release
+        working-directory: ${{ runner.temp }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          sha256sum clubedge-demo.apk > clubedge-demo.apk.sha256
+          gh release upload "$TAG" clubedge-demo.apk clubedge-demo.apk.sha256 --clobber --repo "$GITHUB_REPOSITORY"
+
+  # The native app's demo needs two secrets: RENDER_API_KEY, which the stack previews also use, and
+  # NATIVE_DEMO_DATABASE_URL, the connection string of the API's Postgres database, such as Neon's
+  # pooled one. Without them, native-android is skipped.
+  native-demo:
+    runs-on: ubuntu-24.04
+    env:
+      RENDER_API_KEY: ${{ secrets.RENDER_API_KEY }}
+      DATABASE_URL: ${{ secrets.NATIVE_DEMO_DATABASE_URL }}
+    outputs:
+      enabled: ${{ steps.check.outputs.enabled }}
+    steps:
+      - id: check
+        run: |
+          if [ -n "$RENDER_API_KEY" ] && [ -n "$DATABASE_URL" ]; then
+            echo "enabled=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "enabled=false" >> "$GITHUB_OUTPUT"
+            echo "No native demo: the repository needs the RENDER_API_KEY and NATIVE_DEMO_DATABASE_URL secrets." >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+  # The native app of a project without a website, and its API: the API runs on Render's free
+  # plan, from an image on GitHub's container registry, with Better Auth in it and its tables in
+  # the demo's database. The app signs up and in against it, and is attached to the release as
+  # clubedge-native-demo.apk.
+  native-android:
+    needs: native-demo
+    if: needs.native-demo.outputs.enabled == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    permissions:
+      contents: write
+      packages: write
+    env:
+      TAG: ${{ github.event.release.tag_name || inputs.tag }}
+      # The API's image, whose name GitHub's registry wants in lowercase, and its Render service.
+      IMAGE: ghcr.io/clubedge/clubedge-native-demo-api
+      SERVICE: clubedge-native-demo
+      # The Render account the stack previews use: the key's workspace, or RENDER_OWNER_ID's when
+      # the key reaches several.
+      RENDER_API_KEY: ${{ secrets.RENDER_API_KEY }}
+      RENDER_OWNER_ID: ${{ vars.RENDER_OWNER_ID }}
+      DATABASE_URL: ${{ secrets.NATIVE_DEMO_DATABASE_URL }}
+      # The mobile app's demo's signing key. Without it, the APK keeps Expo's debug signature.
+      DEMO_KEYSTORE: ${{ secrets.DEMO_KEYSTORE }}
+      DEMO_KEYSTORE_PASSWORD: ${{ secrets.DEMO_KEYSTORE_PASSWORD }}
+      DEMO_KEY_ALIAS: ${{ secrets.DEMO_KEY_ALIAS }}
+      DEMO_KEY_PASSWORD: ${{ secrets.DEMO_KEY_PASSWORD }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ env.TAG }}
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: pnpm
+      # React Native builds with Java 17; the runner has the Android SDK.
+      - uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: 17
+      - name: Build create-clubedge-app
+        run: |
+          set -euo pipefail
+          git clone --depth 1 --branch main https://github.com/Clubedge/create-clubedge-app.git "$RUNNER_TEMP/cli"
+          cd "$RUNNER_TEMP/cli"
+          pnpm install --frozen-lockfile
+          pnpm build
+      # The folder's name names the project, and so the app: Clubedge Native Demo. The app only
+      # signs in and calls the API's account routes, so every other module is left out, or takes
+      # its lightest option.
+      - name: Generate the project
+        run: |
+          node "$RUNNER_TEMP/cli/bin/create.mjs" "$RUNNER_TEMP/clubedge-native-demo" --template-dir "$GITHUB_WORKSPACE" \
+            --framework none --api hono --auth better-auth --mobile expo --storage none \
+            --cache memory --email none --payments none --jobs none --observability none \
+            --infra none --no-git --no-install --yes
+      # The app's id becomes permanent with the Android project, which the build creates; it
+      # differs from the mobile app's demo's, so the two install side by side.
+      - name: Set the app's id
+        working-directory: ${{ runner.temp }}/clubedge-native-demo/apps/mobile
+        run: |
+          set -euo pipefail
+          sed -i 's|^const appId = .*|const appId = "live.clubedge.nativedemo";|' app.config.ts
+          grep -q 'const appId = "live.clubedge.nativedemo";' app.config.ts
+          grep -q '"name": "Clubedge Native Demo"' src/config/site.json
+      - name: Install
+        working-directory: ${{ runner.temp }}/clubedge-native-demo
+        run: pnpm install --frozen-lockfile
+      # Render pulls the image without credentials, so its package must be public. GitHub makes a
+      # new package private: the first run stops here until the package's settings make it public.
+      - name: Build the API's image and publish it
+        working-directory: ${{ runner.temp }}/clubedge-native-demo
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          docker build --file apps/api/Dockerfile --tag "$IMAGE:$TAG" \
+            --label "org.opencontainers.image.source=https://github.com/$GITHUB_REPOSITORY" .
+          echo "$GH_TOKEN" | docker login ghcr.io --username "$GITHUB_ACTOR" --password-stdin
+          docker push "$IMAGE:$TAG"
+          package=/orgs/clubedge/packages/container/clubedge-native-demo-api
+          if [ "$(gh api "$package" --jq .visibility 2> /dev/null || true)" = private ]; then
+            echo "Render can't pull $IMAGE while it is private: make it public under Danger Zone at"
+            echo "https://github.com/orgs/Clubedge/packages/container/clubedge-native-demo-api/settings,"
+            echo "then run this workflow again."
+            exit 1
+          fi
+      # Migrations take Neon's direct host, without -pooler: a transaction pooler can break DDL.
+      - name: Migrate the demo's database
+        run: |
+          set -euo pipefail
+          direct="${DATABASE_URL/-pooler./.}"
+          echo "::add-mask::$direct"
+          docker run --rm --env DATABASE_URL_DIRECT="$direct" "$IMAGE:$TAG" node /app/migrate.mjs
+      # The service is created on the first run, in Frankfurt; each release then deploys its own
+      # image. Render generates Better Auth's secret once, so sessions outlive deploys. A free
+      # service sleeps after 15 minutes without requests, and takes about a minute to wake.
+      - name: Deploy the API to Render
+        id: render
+        run: |
+          set -euo pipefail
+          render() {
+            curl --fail-with-body --silent --show-error --header "Authorization: Bearer $RENDER_API_KEY" \
+              --header "Accept: application/json" --header "Content-Type: application/json" "$@"
+          }
+          api=https://api.render.com/v1
+          owner="$RENDER_OWNER_ID"
+          if [ -z "$owner" ]; then
+            owners=$(render "$api/owners?limit=100" | jq -c '[.[] | (.owner // .).id] | unique')
+            if [ "$(jq length <<< "$owners")" != 1 ]; then
+              echo "RENDER_API_KEY reaches several workspaces: set the intended one's ID as the RENDER_OWNER_ID variable."
+              exit 1
+            fi
+            owner=$(jq -r '.[0]' <<< "$owners")
+          fi
+          service=$(render "$api/services?name=$SERVICE&type=web_service&ownerId=$owner&limit=100" |
+            jq -c --arg name "$SERVICE" 'first(.[] | (.service // .) | select(.name == $name)) // empty')
+          if [ -z "$service" ]; then
+            body=$(jq -n --arg owner "$owner" --arg name "$SERVICE" --arg image "$IMAGE:$TAG" '{
+              type: "web_service", name: $name, ownerId: $owner,
+              image: {ownerId: $owner, imagePath: $image},
+              serviceDetails: {runtime: "image", plan: "free", region: "frankfurt", healthCheckPath: "/api/health"}
+            }')
+            service=$(render --request POST "$api/services" --data "$body" | jq -c .service)
+          fi
+          id=$(jq -r .id <<< "$service")
+          url=$(jq -r .serviceDetails.url <<< "$service")
+          variable() {
+            render --request PUT "$api/services/$id/env-vars/$1" --data "$2" > /dev/null
+          }
+          variable DATABASE_URL "$(jq -n --arg value "$DATABASE_URL" '{value: $value}')"
+          variable BETTER_AUTH_URL "$(jq -n --arg value "$url" '{value: $value}')"
+          variable CLIENT_IP_HEADER '{"value": "cf-connecting-ip"}'
+          variable PORT '{"value": "3001"}'
+          if ! render "$api/services/$id/env-vars?limit=100" | jq -e 'any(.[]; (.envVar.key // .key) == "BETTER_AUTH_SECRET")' > /dev/null; then
+            variable BETTER_AUTH_SECRET '{"generateValue": true}'
+          fi
+          image=$(jq -n --arg owner "$owner" --arg image "$IMAGE:$TAG" '{image: {ownerId: $owner, imagePath: $image}}')
+          render --request PATCH "$api/services/$id" --data "$image" > /dev/null
+          since=$(($(date +%s) - 1))
+          deploy=$(render --request POST "$api/services/$id/deploys" --data "$(jq -n --arg image "$IMAGE:$TAG" '{imageUrl: $image}')" | jq -r '.id // empty')
+          status=queued
+          for attempt in $(seq 1 90); do
+            sleep 10
+            if [ -z "$deploy" ]; then
+              # Behind a deploy in progress, such as the one creating the service starts, Render
+              # queues this one and answers without its id: it is the newest once it shows.
+              newest=$(render "$api/services/$id/deploys?limit=1" | jq -c '.[0].deploy')
+              [ "$(date -d "$(jq -r .createdAt <<< "$newest")" +%s)" -ge "$since" ] || continue
+              deploy=$(jq -r .id <<< "$newest")
+            fi
+            status=$(render "$api/services/$id/deploys/$deploy" | jq -r .status)
+            case "$status" in
+              live) break ;;
+              build_failed | update_failed | canceled | deactivated | pre_deploy_failed)
+                echo "Render's deploy $deploy ended $status: its logs are at $(jq -r .dashboardUrl <<< "$service")."
+                exit 1
+                ;;
+            esac
+          done
+          if [ "$status" != live ]; then
+            echo "Render's deploy ${deploy:-(queued)} is still $status after 15 minutes."
+            exit 1
+          fi
+          # The API answers, reaches its database, and runs Better Auth.
+          for check in health ready auth/ok; do
+            curl --fail --silent --show-error --output /dev/null --retry 12 --retry-delay 10 --retry-all-errors "$url/api/$check"
+          done
+          echo "url=$url" >> "$GITHUB_OUTPUT"
+          echo "The demo's API: $url" >> "$GITHUB_STEP_SUMMARY"
+      - name: Build the app against the demo's API and number it after the release
+        working-directory: ${{ runner.temp }}/clubedge-native-demo/apps/mobile
+        env:
+          # Built into the app: the API it signs in at and calls.
+          EXPO_PUBLIC_API_URL: ${{ steps.render.outputs.url }}
+        run: |
+          set -euo pipefail
+          version="${TAG#v}"
+          if ! [[ "$version" =~ ^([0-9]+)\.([0-9]+)\.([0-9]+)$ ]]; then
+            echo "The release tag $TAG is not vMAJOR.MINOR.PATCH."
+            exit 1
+          fi
+          code=$((BASH_REMATCH[1] * 10000 + BASH_REMATCH[2] * 100 + BASH_REMATCH[3]))
+          pnpm exec expo prebuild --platform android
+          sed -i -E "s/versionCode [0-9]+/versionCode $code/; s/versionName \"[^\"]*\"/versionName \"$version\"/" \
+            android/app/build.gradle
+          grep -q "versionCode $code" android/app/build.gradle
+          grep -q "versionName \"$version\"" android/app/build.gradle
+          echo "VERSION=$version" >> "$GITHUB_ENV"
+          # Expo signs the release build with its debug key.
+          (cd android && ./gradlew assembleRelease)
+      - name: Sign the APK with the demo's key
+        if: env.DEMO_KEYSTORE != ''
+        working-directory: ${{ runner.temp }}/clubedge-native-demo/apps/mobile/android
+        run: |
+          set -euo pipefail
+          if [ -z "$DEMO_KEYSTORE_PASSWORD" ] || [ -z "$DEMO_KEY_ALIAS" ] || [ -z "$DEMO_KEY_PASSWORD" ]; then
+            echo "DEMO_KEYSTORE needs DEMO_KEYSTORE_PASSWORD, DEMO_KEY_ALIAS, and DEMO_KEY_PASSWORD."
+            exit 1
+          fi
+          echo "$DEMO_KEYSTORE" | base64 --decode > "$RUNNER_TEMP/demo.p12"
+          trap 'rm -f "$RUNNER_TEMP/demo.p12"' EXIT
+          tools="$ANDROID_HOME/build-tools/$(ls "$ANDROID_HOME/build-tools" | sort -V | tail -n 1)"
+          "$tools/zipalign" -p -f 4 app/build/outputs/apk/release/app-release.apk "$RUNNER_TEMP/aligned.apk"
+          # Signing again replaces the debug signature: apksigner keeps no other signer's.
+          "$tools/apksigner" sign --ks "$RUNNER_TEMP/demo.p12" --ks-type PKCS12 \
+            --ks-pass env:DEMO_KEYSTORE_PASSWORD --ks-key-alias "$DEMO_KEY_ALIAS" \
+            --key-pass env:DEMO_KEY_PASSWORD --out "$RUNNER_TEMP/clubedge-native-demo.apk" "$RUNNER_TEMP/aligned.apk"
+          "$tools/apksigner" verify --print-certs "$RUNNER_TEMP/clubedge-native-demo.apk" > "$RUNNER_TEMP/signers.txt"
+          if grep -q '^Signer #2' "$RUNNER_TEMP/signers.txt"; then
+            echo "The APK is still signed with Expo's debug key too."
+            exit 1
+          fi
+          echo "Clubedge Native Demo $VERSION, signed with the demo's key." >> "$GITHUB_STEP_SUMMARY"
+      - name: Keep Expo's debug signature, without the demo's key
+        if: env.DEMO_KEYSTORE == ''
+        working-directory: ${{ runner.temp }}/clubedge-native-demo/apps/mobile/android
+        run: |
+          set -euo pipefail
+          cp app/build/outputs/apk/release/app-release.apk "$RUNNER_TEMP/clubedge-native-demo.apk"
+          {
+            echo "Clubedge Native Demo $VERSION is **debug-signed**: the repository has no DEMO_KEYSTORE secret."
+            echo "A later APK signed with another key cannot update it in place: uninstall it first."
+          } >> "$GITHUB_STEP_SUMMARY"
+      - name: Attach the APK to the release
+        working-directory: ${{ runner.temp }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          sha256sum clubedge-native-demo.apk > clubedge-native-demo.apk.sha256
+          gh release upload "$TAG" clubedge-native-demo.apk clubedge-native-demo.apk.sha256 --clobber --repo "$GITHUB_REPOSITORY"

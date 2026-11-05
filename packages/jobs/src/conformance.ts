@@ -192,6 +192,16 @@ export function describeJobQueue(
     );
 
     it(
+      "refuses a key with no window, because providers would read it differently",
+      async () => {
+        const ping = defineJob({ name: unique("ping"), run: async () => null });
+        const queue = await open([ping]);
+        await expect(queue.enqueue(ping, {}, { key: "ada" })).rejects.toThrow(/throttleSeconds/);
+      },
+      timeout,
+    );
+
+    it(
       "lists a job's runs newest first, filtered by data, up to the limit",
       async () => {
         const note = defineJob<{ user: string; n: number }>({

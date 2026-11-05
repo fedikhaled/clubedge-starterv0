@@ -12,3 +12,29 @@ export async function getCurrentUser(
   void _config;
   return null;
 }
+
+// clubedge:if auth!=none
+// An auth provider's file replaces this one, with these two working; the Starter's workspace
+// compiles src/server/account.ts against them.
+export function canDeleteAccount(): boolean {
+  return false;
+}
+
+export async function deleteAccount(_input: {
+  user: User;
+  password: string;
+  request: Request;
+  beforeDelete(): Promise<void>;
+}) {
+  void _input;
+  return "not-supported" as const;
+}
+// clubedge:end
+
+// clubedge:if auth=better-auth
+// Better Auth's file replaces this one; without a website, its endpoints run in this API.
+export async function handleAuthRequest(_request: Request): Promise<Response> {
+  void _request;
+  return new Response(null, { status: 404 });
+}
+// clubedge:end

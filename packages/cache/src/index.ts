@@ -1,4 +1,4 @@
-export { createMemoryCache, type Cache } from "./memory-cache";
+export { createMemoryCache, validateCacheEntry, type Cache } from "./memory-cache";
 export {
   createMemoryRateLimiter,
   validateRateLimitIdentifier,
