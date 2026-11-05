@@ -89,11 +89,11 @@ jobs:
           curl --fail --silent --show-error --output /dev/null http://127.0.0.1:3001/api/health
       # clubedge:end
       # clubedge:if mobile!=none
-      # package.json's pnpm.auditConfig skips two high advisories in Expo's development CLI
-      # (@expo/cli), which builds and serves the native app but is not part of it: node-forge's,
-      # which has no fixed release, and zod 3's, fixed only in zod 4. pnpm skips them wherever they
-      # appear, so remove them once Expo's CLI no longer needs them. Last checked on 2026-10-26,
-      # with @expo/cli 58.1.15.
+      # package.json's pnpm.overrides moves Expo's development CLI (@expo/cli) to a patched
+      # node-forge, and its pnpm.auditConfig still skips one high advisory there: zod 3's, fixed
+      # only in zod 4. The CLI builds and serves the native app but is not part of it. pnpm skips
+      # that advisory wherever it appears, so remove it once Expo's CLI no longer needs zod 3.
+      # Last checked on 2026-11-05, with @expo/cli 58.1.16.
       # clubedge:end
       - run: pnpm audit --audit-level high
 
