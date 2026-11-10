@@ -1,5 +1,6 @@
-import { Account, Client, ID } from "appwrite";
-import type { AuthClient } from "@/lib/auth-client";
+import { Account, AppwriteException, Client, ID } from "appwrite";
+import { AccountError, type AuthClient } from "@/lib/auth-client";
+import { publicOrigin } from "@/lib/public-origin";
 
 const endpoint = import.meta.env.VITE_APPWRITE_ENDPOINT;
 const projectId = import.meta.env.VITE_APPWRITE_PROJECT_ID;
@@ -31,7 +32,7 @@ export const authClient: AuthClient = {
     if (!user.emailVerification) {
       try {
         await account.createVerification({
-          url: verificationUrl(`${window.location.origin}/login?next=%2Fdashboard`),
+          url: verificationUrl(`${publicOrigin}/login?next=%2Fdashboard`),
         });
       } catch {
         // Keep the verification-required result: the UI can invite the user to retry later.
@@ -82,6 +83,26 @@ export const authClient: AuthClient = {
     const secret = params.get("secret");
     if (!userId || !secret) throw new Error("The reset link is missing its credentials.");
     await account.updateRecovery({ userId, secret, password });
+  },
+  async changePassword(currentPassword, newPassword) {
+    if (!account) throw new Error("Appwrite Auth is not configured.");
+    try {
+      await account.updatePassword({ password: newPassword, oldPassword: currentPassword });
+    } catch (error) {
+      if (error instanceof AppwriteException) {
+        if (error.type === "user_invalid_credentials") throw new AccountError("invalid-password");
+        if (error.code === 429) throw new AccountError("rate-limited");
+        if (error.code === 400) throw new AccountError("invalid-input");
+      }
+      throw error;
+    }
+    // Sessions on other devices end; this one stays signed in.
+    const { sessions } = await account.listSessions();
+    await Promise.all(
+      sessions
+        .filter((session) => !session.current)
+        .map((session) => account.deleteSession({ sessionId: session.$id })),
+    );
   },
   async signOut() {
     if (account) await account.deleteSession({ sessionId: "current" });

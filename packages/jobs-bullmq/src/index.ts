@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import { Queue, Worker, type Job, type JobsOptions } from "bullmq";
 import { Redis } from "ioredis";
 import {
+  assertEnqueueOptions,
   JOB_DEFAULTS,
   errorOutput,
   runAttempt,
@@ -67,6 +68,7 @@ export function createBullMqJobs({
     return connection;
   };
   let shared: Redis | undefined;
+  let blocking: Redis | undefined;
   const queues = new Map<string, Queue>();
   const workers: Worker[] = [];
   let working: Promise<void> | undefined;
@@ -155,19 +157,15 @@ export function createBullMqJobs({
 
     async enqueue(definition, data, { delaySeconds, key, throttleSeconds } = {}) {
       definitionFor(definition.name);
+      assertEnqueueOptions({ key, throttleSeconds });
       const jobId = randomUUID();
       const job = await queueFor(definition).add(definition.name, data, {
         ...jobOptions(definition),
         jobId,
         ...(delaySeconds ? { delay: delaySeconds * 1000 } : {}),
-        // A key alone allows one unfinished job per key; with throttleSeconds, one per window.
-        ...(key
-          ? {
-              deduplication: {
-                id: `${definition.name}:${key}`,
-                ...(throttleSeconds ? { ttl: throttleSeconds * 1000 } : {}),
-              },
-            }
+        // One job per key inside the window; BullMQ forgets the key when the job finishes earlier.
+        ...(key && throttleSeconds
+          ? { deduplication: { id: `${definition.name}:${key}`, ttl: throttleSeconds * 1000 } }
           : {}),
       });
       // A deduplicated add returns the job that is already there.
@@ -202,13 +200,18 @@ export function createBullMqJobs({
 
     async runDue({ limit = 25 } = {}) {
       await syncSchedules();
+      // BullMQ duplicates a caller-owned connection for each blocking worker and closes only that
+      // duplicate, so one connection serves every definition here. Creating one per definition
+      // would leave a connected client open for every call until stop().
+      blocking ??= connect(true);
+      const connection = blocking;
       let completed = 0;
       let failed = 0;
       for (const definition of definitions) {
         if (completed + failed >= limit) break;
         // A worker without a processor: this process fetches and finishes each job itself.
         const manual = new Worker(definition.name, null, {
-          connection: connect(true),
+          connection,
           prefix,
           autorun: false,
         });
@@ -273,6 +276,7 @@ export function createBullMqJobs({
           .map((connection) => connection.quit().catch(() => connection.disconnect())),
       );
       shared = undefined;
+      blocking = undefined;
       working = undefined;
     },
   };

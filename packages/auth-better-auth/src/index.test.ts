@@ -85,6 +85,29 @@ describe("Better Auth adapter", () => {
     expect(jar.writes).toEqual([]);
   });
 
+  it("keeps a rate limit and an unexpected failure apart from a wrong password", async () => {
+    // An APIError as Better Auth throws it: name plus a body code and an HTTP status.
+    const apiError = (status: number, code?: string) =>
+      Object.assign(new Error("sign in"), { name: "APIError", status, body: { code } });
+    const failingWith = (error: Error) =>
+      createBetterAuth({
+        server: {
+          api: { signInEmail: vi.fn().mockRejectedValue(error) },
+          options: server.options,
+        } as unknown as BetterAuthServer,
+        cookies: cookieJar().store,
+      });
+
+    await expect(failingWith(apiError(429)).signInWithPassword(credentials)).resolves.toEqual({
+      ok: false,
+      error: "rate-limited",
+    });
+    // Telling the user to check a password the provider never rejected would hide the real fault.
+    await expect(
+      failingWith(apiError(500, "FAILED_TO_GET_SESSION")).signInWithPassword(credentials),
+    ).rejects.toThrow("sign in");
+  });
+
   it("refuses a second account for the same email", async () => {
     const auth = createBetterAuth({ server, cookies: cookieJar().store });
     await auth.signUp({ ...credentials, emailRedirectTo: "unused" });

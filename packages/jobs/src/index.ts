@@ -47,16 +47,26 @@ export interface JobRecord {
 export interface EnqueueOptions {
   /** Waits this many seconds before the job can run. */
   delaySeconds?: number;
-  /** With throttleSeconds: at most one job with this key is accepted per window. */
+  /** Together with throttleSeconds: at most one job with this key is accepted per window. */
   key?: string;
   throttleSeconds?: number;
+}
+
+/**
+ * A key on its own would mean one unfinished job in BullMQ, nothing in pg-boss, and one per day in
+ * Inngest, so every provider rejects it instead of quietly choosing: name the window or leave the
+ * key out. Called by each provider's enqueue.
+ */
+export function assertEnqueueOptions({ key, throttleSeconds }: EnqueueOptions): void {
+  if (key && !throttleSeconds)
+    throw new Error('A job "key" needs "throttleSeconds": give the window it throttles within.');
 }
 
 /** Application code depends on this interface, never on a queue library. */
 export interface JobQueue {
   /** Stored nowhere, but useful in logs, such as "pg-boss". */
   readonly id: string;
-  /** Adds a job and returns its id, or null when a throttled job with the same key exists. */
+  /** Adds a job and returns its id, or null when `key` was already accepted within the window. */
   enqueue<T extends object>(
     job: JobDefinition<T>,
     data: T,
@@ -187,6 +197,7 @@ export function createMemoryJobs(
     async enqueue(definition, data, options = {}) {
       if (!byName.has(definition.name))
         throw new Error(`The job "${definition.name}" is not defined.`);
+      assertEnqueueOptions(options);
       if (options.key && options.throttleSeconds) {
         const since = now() - options.throttleSeconds * 1000;
         const taken = jobs.some(

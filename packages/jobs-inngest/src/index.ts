@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import { Inngest, RetryAfterError } from "inngest";
 import { serve } from "inngest/edge";
 import {
+  assertEnqueueOptions,
   JOB_DEFAULTS,
   errorOutput,
   runAttempt,
@@ -28,6 +29,11 @@ export interface InngestJobsConfig {
    * the app talks to Inngest Cloud with the keys above.
    */
   dev?: boolean | string;
+  /**
+   * The public origin Inngest reaches the app at, such as https://app.example.com, when a proxy
+   * in front of the app changes the host or protocol it sees. Default: the request's own URL.
+   */
+  serveOrigin?: string;
   /** Receives each failed job attempt with the job's name. */
   onError?: (error: unknown, context?: { job: string; attempt: number }) => void;
   /** For tests: the fetch used for Inngest's REST API. */
@@ -96,6 +102,7 @@ export function createInngestJobs({
   eventKey,
   signingKey,
   dev,
+  serveOrigin,
   onError = (error, context) =>
     console.error(context ? `Background job "${context.job}" failed:` : "Background jobs:", error),
   fetch: fetcher = fetch,
@@ -164,7 +171,7 @@ export function createInngestJobs({
     );
   });
 
-  const handler = serve({ client, functions });
+  const handler = serve({ client, functions, ...(serveOrigin ? { serveOrigin } : {}) });
   const pending = new Map<
     string,
     { job: string; data: Record<string, unknown>; createdAt: Date }
@@ -201,11 +208,13 @@ export function createInngestJobs({
 
     async enqueue(definition, data, { delaySeconds, key, throttleSeconds } = {}) {
       definitionFor(definition.name);
+      assertEnqueueOptions({ key, throttleSeconds });
       let id: string = randomUUID();
-      if (key) {
-        // Inngest drops a second event with the same id within 24 hours. With throttleSeconds, the
-        // id names the window, and a recent event with the key means this one is throttled.
-        const window = throttleSeconds ? throttleSeconds * 1000 : DAY;
+      if (key && throttleSeconds) {
+        // Inngest drops a second event with the same id within 24 hours, so the id names the
+        // window, and a recent event with the key means this one is throttled. Inngest's event
+        // list says nothing about the run an event started, so a window is the only limit it has.
+        const window = throttleSeconds * 1000;
         const recent = await events(definition, Date.now() - window).catch(() => []);
         if (recent.some((event) => event.data?.[KEY] === key)) return null;
         id = `${definition.name}:${key}:${Math.floor(Date.now() / window)}`;
