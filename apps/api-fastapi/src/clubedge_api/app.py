@@ -162,8 +162,10 @@ def create_app(dependencies: ApiDependencies) -> FastAPI:
         )
 
     @app.get("/api/session")
-    async def session(request: Request) -> dict[str, Any]:
-        return {"user": await dependencies.get_current_user(request)}
+    async def session(request: Request) -> JSONResponse:
+        return JSONResponse(
+            {"user": await dependencies.get_current_user(request)}, headers=NO_STORE
+        )
 
     app.include_router(app_version_router(app_version=dependencies.app_version))
 

@@ -57,13 +57,18 @@ paths:
   /api/session:
     get:
       operationId: getSession
-      summary: The signed-in user, or null.
+      summary: The signed-in user, or null. Never cached.
       security:
         - bearerAuth: []
         - {}
       responses:
         "200":
           description: The current session.
+          headers:
+            Cache-Control:
+              description: no-store, so one browser's answer is never served to another.
+              schema:
+                type: string
           content:
             application/json:
               schema:

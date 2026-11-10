@@ -139,9 +139,10 @@ export function createApp(dependencies: ApiDependencies) {
     return c.json<Ready>({ status: ready ? "ok" : "unavailable" }, ready ? 200 : 503);
   });
 
-  app.get("/api/session", async (c) =>
-    c.json<Session>({ user: await dependencies.getCurrentUser(c.req.raw) }),
-  );
+  app.get("/api/session", async (c) => {
+    c.header("Cache-Control", "no-store");
+    return c.json<Session>({ user: await dependencies.getCurrentUser(c.req.raw) });
+  });
 
   app.route("/", appVersionRoutes(dependencies));
 

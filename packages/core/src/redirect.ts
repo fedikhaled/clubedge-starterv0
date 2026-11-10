@@ -12,7 +12,9 @@ export function safeRedirectPath(value: unknown, fallback = "/dashboard"): strin
 
   try {
     const url = new URL(value, placeholderOrigin);
-    if (url.origin !== placeholderOrigin) return fallback;
+    // URL normalizes "/..//evil.example" to the pathname "//evil.example", which browsers treat
+    // as another host, so the checks on the raw value above are not enough.
+    if (url.origin !== placeholderOrigin || url.pathname.startsWith("//")) return fallback;
     return `${url.pathname}${url.search}${url.hash}`;
   } catch {
     return fallback;
