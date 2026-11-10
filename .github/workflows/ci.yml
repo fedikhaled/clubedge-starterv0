@@ -267,8 +267,8 @@ jobs:
   # The mobile app: the web app's build for it, copied into the Android project (which Capacitor
   # creates when the project has none yet), and a debug APK to try on a device.
   android:
-    # The Starter's repository is the template projects come from, not one, and neither is a fork
-    # of it: only a generated project has the app here, where create-clubedge-app moves it. So a
+    # The Starter's repository is the template projects come from, not one, and neither is a fork # clubedge:only starter-repository
+    # of it: only a generated project has the app here, where create-clubedge-app moves it. So a # clubedge:only starter-repository
     # repository builds an APK once it says which website that app calls. # clubedge:only starter-repository
     if: github.repository != 'Clubedge/clubedge-starter' && vars.WEB_URL != '' # clubedge:only starter-repository
     runs-on: ubuntu-24.04
@@ -307,8 +307,8 @@ jobs:
   # The native app: its packages against its Expo SDK, its JavaScript bundle for Android and iOS,
   # and a release APK, built from the Android project Expo generates from app.config.ts.
   expo:
-    # The Starter's repository is the template projects come from, not one, and neither is a fork
-    # of it: only a generated project has the app here, where create-clubedge-app moves it. So a
+    # The Starter's repository is the template projects come from, not one, and neither is a fork # clubedge:only starter-repository
+    # of it: only a generated project has the app here, where create-clubedge-app moves it. So a # clubedge:only starter-repository
     # repository builds one once it says which API that app calls. # clubedge:only starter-repository
     if: github.repository != 'Clubedge/clubedge-starter' && vars.EXPO_PUBLIC_API_URL != '' # clubedge:only starter-repository
     runs-on: ubuntu-24.04
