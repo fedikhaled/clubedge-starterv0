@@ -88,9 +88,16 @@ export default defineConfig([
   },
   {
     // The composition root is where a provider gets chosen: src/server for the server-rendered
-    // apps, src/variants for the Vite SPA, whose wiring lives there.
+    // apps, src/variants for the Vite SPA, whose wiring lives there. A generated project gets a
+    // variant copied over src/lib/auth.ts (Vite, Expo) or src/proxy.ts (Next.js), so those files
+    // are composition roots too.
     files: ["apps/*/src/**/*.{ts,tsx}"],
-    ignores: ["apps/*/src/server/**", "apps/*/src/variants/**"],
+    ignores: [
+      "apps/*/src/server/**",
+      "apps/*/src/variants/**",
+      "apps/*/src/lib/auth.ts",
+      "apps/*/src/proxy.ts",
+    ],
     rules: {
       "no-restricted-imports": [
         "error",

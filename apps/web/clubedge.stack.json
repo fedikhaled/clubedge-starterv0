@@ -37,7 +37,7 @@
         ]
       },
       "supabase": {
-        "files": ["src/proxy.ts"]
+        "files": ["src/proxy.ts", "src/server/proxy-session.ts"]
       },
       "better-auth|firebase": {
         "files": ["src/server/auth-email.ts"]
