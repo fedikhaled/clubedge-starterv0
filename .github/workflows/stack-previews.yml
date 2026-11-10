@@ -14,6 +14,7 @@ jobs:
   deploy:
     if: >-
       github.event.action != 'closed' && vars.NEON_PROJECT_ID != '' &&
+      (github.repository == 'Clubedge/clubedge-starter' || vars.SUPABASE_PROJECT_REF != '') &&
       github.event.pull_request.user.login != 'dependabot[bot]' &&
       github.event.pull_request.head.repo.full_name == github.repository
     name: React + Vite + ${{ matrix.api }}
