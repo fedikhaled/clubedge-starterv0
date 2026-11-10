@@ -702,7 +702,7 @@ importers:
         version: link:../db
       drizzle-orm:
         specifier: ^0.45.4
-        version: 0.45.4(@electric-sql/pglite@0.5.8)(@opentelemetry/api@1.10.0)(@types/pg@8.15.6)(@upstash/redis@1.39.0)(expo-sqlite@58.0.14(expo@58.0.19)(react-native@0.88.0(@babel/core@7.29.7)(@react-native/metro-config@0.88.0(@babel/core@7.29.7))(@types/react@19.3.0)(react@19.3.1))(react@19.3.1))(kysely@0.29.6)(pg@8.23.1)(postgres@3.4.9)
+        version: 0.45.4(@electric-sql/pglite@0.5.8)(@opentelemetry/api@1.10.0)(@types/pg@8.15.6)(@upstash/redis@1.39.0)(expo-sqlite@58.0.14(expo@58.0.20)(react-native@0.88.0(@babel/core@7.29.7)(@react-native/metro-config@0.88.0(@babel/core@7.29.7))(@types/react@19.3.0)(react@19.3.1))(react@19.3.1))(kysely@0.29.6)(pg@8.23.1)(postgres@3.4.9)
     devDependencies:
       '@electric-sql/pglite':
         specifier: 0.5.8
