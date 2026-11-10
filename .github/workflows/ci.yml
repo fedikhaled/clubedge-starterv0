@@ -56,7 +56,7 @@ jobs:
       # clubedge:if framework=none
       # Build the way the API is developed: with its env example copied into place.
       - run: cp apps/api/.env.example apps/api/.env.local
-        if: github.repository != 'Clubedge/clubedge-starter' # clubedge:only starter-repository
+        if: hashFiles('clubedge.template.json') == '' # clubedge:only starter-repository
       # clubedge:end
       - run: pnpm build
       # clubedge:if framework!=none
@@ -77,7 +77,7 @@ jobs:
       # clubedge:if framework=none
       # The Starter's own pnpm start serves its website, so only projects without one run this.
       - name: Serve the API's production build
-        if: github.repository != 'Clubedge/clubedge-starter' # clubedge:only starter-repository
+        if: hashFiles('clubedge.template.json') == '' # clubedge:only starter-repository
         run: |
           set -euo pipefail
           pnpm start > "$RUNNER_TEMP/api.log" 2>&1 &
@@ -137,7 +137,7 @@ jobs:
       # clubedge:if framework=none
       # The API's image, which owns the database and carries the migrator.
       - name: Build the production image
-        if: github.repository != 'Clubedge/clubedge-starter' # clubedge:only starter-repository
+        if: hashFiles('clubedge.template.json') == '' # clubedge:only starter-repository
         run: docker build --file apps/api/Dockerfile --tag api:ci .
       # clubedge:end
       # clubedge:if framework=next
@@ -195,7 +195,7 @@ jobs:
       # On the host's network, like the migrations: the API on port 3001, where the mobile app
       # calls it.
       - name: Start the API's image and check health
-        if: github.repository != 'Clubedge/clubedge-starter' # clubedge:only starter-repository
+        if: hashFiles('clubedge.template.json') == '' # clubedge:only starter-repository
         run: |
           set -euo pipefail
           docker run --detach --name api --network host \
@@ -260,8 +260,8 @@ jobs:
   # The mobile app: the web app's build for it, copied into the Android project (which Capacitor
   # creates when the project has none yet), and a debug APK to try on a device.
   android:
-    # The Starter's repository is the template projects come from, not one. # clubedge:only starter-repository
-    if: github.repository != 'Clubedge/clubedge-starter' # clubedge:only starter-repository
+    # The Starter's repository is the template projects come from, not one, and neither is a fork of it. # clubedge:only starter-repository
+    if: github.repository != 'Clubedge/clubedge-starter' && !github.event.repository.fork # clubedge:only starter-repository
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v7
@@ -298,8 +298,8 @@ jobs:
   # The native app: its packages against its Expo SDK, its JavaScript bundle for Android and iOS,
   # and a release APK, built from the Android project Expo generates from app.config.ts.
   expo:
-    # The Starter's repository is the template projects come from, not one. # clubedge:only starter-repository
-    if: github.repository != 'Clubedge/clubedge-starter' # clubedge:only starter-repository
+    # The Starter's repository is the template projects come from, not one, and neither is a fork of it. # clubedge:only starter-repository
+    if: github.repository != 'Clubedge/clubedge-starter' && !github.event.repository.fork # clubedge:only starter-repository
     runs-on: ubuntu-24.04
     defaults:
       run:
